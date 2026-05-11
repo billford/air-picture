@@ -55,6 +55,18 @@ def acquire_lock() -> bool:
             # Stale lock — remove it
             lock.unlink(missing_ok=True)
 
+    # Secondary check: hardware state within this process.
+    # dongle_connected=True is fine — that just means the device is reachable.
+    # Block only if mode is not idle (another monitor is actively running).
+    try:
+        from sdr_mcp.hardware import get_device, HardwareState
+        dev = get_device()
+        if dev.state != HardwareState.IDLE:
+            logger.warning(f"SDR hardware not idle (mode={dev.state.value}), skipping scan")
+            return False
+    except Exception as e:
+        logger.debug(f"Could not check hardware state: {e}")
+
     lock.write_text(str(os.getpid()))
     return True
 
