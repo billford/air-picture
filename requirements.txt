@@ -1,0 +1,3 @@
+anthropic>=0.40.0
+# sdr-mcp is installed from ~/Documents/mcp-sdr
+# Install with: pip install -e ~/Documents/mcp-sdr

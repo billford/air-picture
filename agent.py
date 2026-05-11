@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+"""
+Air Picture Agent — main entry point.
+
+Usage:
+    python agent.py --scan       Run one scan cycle
+    python agent.py --report     Generate and deliver today's report
+    python agent.py --init       Initialize the database
+    python agent.py --status     Print today's stats
+"""
+
+import argparse
+import logging
+import os
+import sys
+import time
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+# Add the mcp-sdr package to path
+sys.path.insert(0, os.path.expanduser("~/Documents/mcp-sdr"))
+
+import config
+import db
+import detect
+import deliver
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
+logger = logging.getLogger("air_picture")
+
+
+# ---------------------------------------------------------------------------
+# Lock file management (prevents conflict with Claude Desktop MCP)
+# ---------------------------------------------------------------------------
+
+class LockError(Exception):
+    pass
+
+
+def acquire_lock() -> bool:
+    lock = Path(config.LOCK_FILE)
+    if lock.exists():
+        # Check if the PID in the lock file is still alive
+        try:
+            pid = int(lock.read_text().strip())
+            os.kill(pid, 0)  # Signal 0 = check existence only
+            logger.warning(f"SDR lock held by PID {pid}, skipping scan")
+            return False
+        except (ValueError, ProcessLookupError, PermissionError):
+            # Stale lock — remove it
+            lock.unlink(missing_ok=True)
+
+    lock.write_text(str(os.getpid()))
+    return True
+
+
+def release_lock():
+    Path(config.LOCK_FILE).unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Scan cycle
+# ---------------------------------------------------------------------------
+
+def run_scan():
+    """Run a single ADS-B scan cycle."""
+    if not acquire_lock():
+        print("[scan] SDR busy (lock file present). Skipping this cycle.")
+        return
+
+    duration_seconds = config.SCAN_DURATION_MINUTES * 60
+    session_id = str(uuid.uuid4())[:8]
+
+    logger.info(f"Starting scan [{session_id}] for {config.SCAN_DURATION_MINUTES} min")
+    print(f"[scan] Session {session_id} — scanning for {config.SCAN_DURATION_MINUTES} min…")
+
+    try:
+        from sdr_mcp.adsb import get_adsb_monitor
+
+        monitor = get_adsb_monitor()
+        monitor.start()
+        time.sleep(duration_seconds)
+        aircraft_list = monitor.get_aircraft()
+        stats = monitor.stop()
+
+        logger.info(f"Scan complete: {len(aircraft_list)} aircraft, {stats}")
+
+    except Exception as e:
+        logger.error(f"Scan failed: {e}")
+        print(f"[scan] ERROR: {e}")
+        release_lock()
+        return
+    finally:
+        release_lock()
+
+    if not aircraft_list:
+        print("[scan] No aircraft detected this cycle.")
+        return
+
+    # Log to database
+    new_count = db.log_aircraft(aircraft_list, session_id)
+    print(f"[scan] {len(aircraft_list)} aircraft seen, {new_count} new flights logged.")
+
+    # Run anomaly detection
+    anomalies = detect.run_anomaly_detection(aircraft_list)
+    if anomalies:
+        print(f"[scan] {len(anomalies)} anomalies detected:")
+        for a in anomalies:
+            print(f"       [{a['type']}] {a['icao_hex']} {a['callsign'] or ''}")
+
+    # Check traffic baseline deviation (only if we have history)
+    baseline = db.get_rolling_baseline()
+    if baseline.get("days_sampled", 0) >= 3:
+        deviation_anomalies = detect.check_traffic_deviation(baseline)
+        if deviation_anomalies:
+            for a in deviation_anomalies:
+                print(f"[scan] TRAFFIC: {a['description']}")
+
+        missing = detect.check_missing_regulars()
+        if missing:
+            for a in missing:
+                print(f"[scan] MISSING REGULAR: {a['description']}")
+
+
+# ---------------------------------------------------------------------------
+# Report generation and delivery
+# ---------------------------------------------------------------------------
+
+def run_report(date_str=None):
+    """Generate today's air picture report and deliver it."""
+    if not config.ANTHROPIC_API_KEY:
+        print("[report] ERROR: ANTHROPIC_API_KEY not set in .env")
+        sys.exit(1)
+
+    import report as report_module
+
+    date_str = date_str or datetime.utcnow().date().isoformat()
+    print(f"[report] Generating air picture for {date_str}…")
+
+    text = report_module.generate_report(date_str)
+    print("\n" + "=" * 70)
+    print(text)
+    print("=" * 70 + "\n")
+
+    deliver.deliver(text, date_str)
+
+
+# ---------------------------------------------------------------------------
+# Status summary
+# ---------------------------------------------------------------------------
+
+def run_status():
+    today = datetime.utcnow().date().isoformat()
+    flights = db.get_date_flights(today)
+    anomalies = db.get_today_anomalies()
+    baseline = db.get_rolling_baseline()
+    busiest = db.get_busiest_hour_today()
+
+    unique = len({f["icao_hex"] for f in flights})
+    avg = baseline.get("avg_daily", 0)
+
+    print(f"\nAIR PICTURE STATUS — {today}")
+    print(f"  Flights logged today : {len(flights)} ({unique} unique aircraft)")
+    print(f"  Anomalies flagged    : {len(anomalies)}")
+    print(f"  Busiest hour         : {busiest:02d}:00" if busiest is not None else "  Busiest hour         : n/a")
+    print(f"  7-day avg            : {avg:.0f}/day ({baseline.get('days_sampled', 0)} days sampled)")
+
+    if anomalies:
+        print("\n  Recent anomalies:")
+        for a in anomalies[-5:]:
+            print(f"    [{a['anomaly_type']}] {a['icao_hex']} — {a['description'][:80]}")
+    print()
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(description="Air Picture Agent")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--scan", action="store_true", help="Run one scan cycle")
+    group.add_argument("--report", action="store_true", help="Generate and deliver today's report")
+    group.add_argument("--init", action="store_true", help="Initialize the database")
+    group.add_argument("--status", action="store_true", help="Print today's stats")
+    parser.add_argument("--date", help="Date for --report (YYYY-MM-DD, default: today)")
+
+    args = parser.parse_args()
+
+    if args.init:
+        db.init_db()
+        print("[init] Database initialized.")
+
+    elif args.scan:
+        db.init_db()
+        run_scan()
+
+    elif args.report:
+        run_report(args.date)
+
+    elif args.status:
+        run_status()
+
+
+if __name__ == "__main__":
+    main()
