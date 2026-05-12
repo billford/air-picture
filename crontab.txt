@@ -6,8 +6,8 @@ VENV=/Users/billfordx/air-picture/.venv/bin/python
 AGENT=/Users/billfordx/air-picture/agent.py
 LOG=/Users/billfordx/air-picture/air_picture.log
 
-# Standard scan every 30 minutes
-*/30 * * * * $VENV $AGENT --scan >> $LOG 2>&1
+# Off-peak hours only (avoids double-firing during peak windows)
+*/30 0-6,10-15,20-23 * * * $VENV $AGENT --scan >> $LOG 2>&1
 
 # Peak hours — every 15 minutes 7-9 AM and 4-7 PM
 */15 7-9 * * * $VENV $AGENT --scan >> $LOG 2>&1

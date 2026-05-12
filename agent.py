@@ -44,16 +44,30 @@ class LockError(Exception):
 
 def acquire_lock() -> bool:
     lock = Path(config.LOCK_FILE)
-    if lock.exists():
-        # Check if the PID in the lock file is still alive
+
+    # Atomic create: O_CREAT|O_EXCL fails if the file already exists,
+    # with no window between the check and the write.
+    try:
+        fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+    except FileExistsError:
+        # Lock exists — check whether the owning PID is still alive
         try:
             pid = int(lock.read_text().strip())
-            os.kill(pid, 0)  # Signal 0 = check existence only
+            os.kill(pid, 0)
             logger.warning(f"SDR lock held by PID {pid}, skipping scan")
             return False
         except (ValueError, ProcessLookupError, PermissionError):
-            # Stale lock — remove it
+            # Stale lock — remove and try once more atomically
             lock.unlink(missing_ok=True)
+            try:
+                fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, str(os.getpid()).encode())
+                os.close(fd)
+            except FileExistsError:
+                logger.warning("SDR lock contested after stale removal, skipping scan")
+                return False
 
     # Secondary check: hardware state within this process.
     # dongle_connected=True is fine — that just means the device is reachable.
@@ -63,11 +77,11 @@ def acquire_lock() -> bool:
         dev = get_device()
         if dev.state != HardwareState.IDLE:
             logger.warning(f"SDR hardware not idle (mode={dev.state.value}), skipping scan")
+            lock.unlink(missing_ok=True)
             return False
     except Exception as e:
         logger.debug(f"Could not check hardware state: {e}")
 
-    lock.write_text(str(os.getpid()))
     return True
 
 
