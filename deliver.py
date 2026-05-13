@@ -1,5 +1,6 @@
 """Report delivery: file archive, ntfy.sh push, Facebook post."""
 
+import json
 import logging
 import os
 import urllib.request
@@ -87,6 +88,33 @@ def post_facebook(report_text: str, date_str: str) -> bool:
         return False
 
 
+def post_zapier_webhook(report_text: str, date_str: str) -> bool:
+    """POST the report to a Zapier webhook. Returns True on success."""
+    url = config.ZAPIER_WEBHOOK_URL
+    if not url:
+        logger.debug("ZAPIER_WEBHOOK_URL not configured, skipping")
+        return False
+
+    payload = json.dumps({"date": date_str, "report": report_text}).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            success = resp.status in (200, 201)
+            if success:
+                logger.info("Report sent to Zapier webhook")
+            else:
+                logger.warning(f"Zapier webhook returned {resp.status}")
+            return success
+    except Exception as e:
+        logger.error(f"Zapier webhook failed: {e}")
+        return False
+
+
 def deliver(report_text: str, date_str: str):
     """Run all configured delivery channels."""
     file_path = save_to_file(report_text, date_str)
@@ -99,3 +127,7 @@ def deliver(report_text: str, date_str: str):
     if config.FB_PAGE_ID and config.FB_ACCESS_TOKEN:
         ok = post_facebook(report_text, date_str)
         print(f"[deliver] Facebook post: {'OK' if ok else 'FAILED'}")
+
+    if config.ZAPIER_WEBHOOK_URL:
+        ok = post_zapier_webhook(report_text, date_str)
+        print(f"[deliver] Zapier webhook: {'OK' if ok else 'FAILED'}")
