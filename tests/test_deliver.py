@@ -1,16 +1,11 @@
+# pylint: disable=missing-function-docstring,missing-class-docstring,protected-access
 """Tests for report delivery functions."""
 
-import io
 import json
 import tempfile
 import unittest
-from http.client import HTTPResponse
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import deliver
 
@@ -72,8 +67,7 @@ class TestPushNtfy(unittest.TestCase):
     @patch.object(deliver.config, "NTFY_TOPIC", "test-topic")
     @patch("deliver._http_post", return_value=True)
     def test_sends_summary_line(self, mock_post):
-        report = "HEADER\nExecutive summary line.\nMore stuff."
-        deliver.push_ntfy(report, "2026-05-14")
+        deliver.push_ntfy("HEADER\nExecutive summary line.\nMore stuff.", "2026-05-14")
         self.assertEqual(mock_post.call_args[1]["data"], b"Executive summary line.")
 
     @patch.object(deliver.config, "NTFY_TOPIC", "test-topic")
@@ -125,8 +119,7 @@ class TestPostZapierWebhook(unittest.TestCase):
     @patch("deliver._http_post", return_value=True)
     def test_uses_201_success_status(self, mock_post):
         deliver.post_zapier_webhook("report", "2026-05-14")
-        kwargs = mock_post.call_args[1]
-        self.assertIn(201, kwargs.get("success_statuses", ()))
+        self.assertIn(201, mock_post.call_args[1].get("success_statuses", ()))
 
 
 class TestDeliver(unittest.TestCase):
@@ -137,7 +130,7 @@ class TestDeliver(unittest.TestCase):
     @patch.object(deliver.config, "ZAPIER_WEBHOOK_URL", "https://hooks.zapier.com/test")
     @patch("deliver.push_ntfy", return_value=True)
     @patch("deliver.post_zapier_webhook", return_value=True)
-    def test_calls_configured_channels(self, mock_zapier, mock_ntfy, mock_save):
+    def test_calls_configured_channels(self, mock_zapier, mock_ntfy, _mock_save):
         deliver.deliver("report", "2026-05-14")
         mock_ntfy.assert_called_once_with("report", "2026-05-14")
         mock_zapier.assert_called_once_with("report", "2026-05-14")
@@ -147,10 +140,9 @@ class TestDeliver(unittest.TestCase):
     @patch.object(deliver.config, "FB_PAGE_ID", "")
     @patch.object(deliver.config, "FB_ACCESS_TOKEN", "")
     @patch.object(deliver.config, "ZAPIER_WEBHOOK_URL", "")
-    def test_no_channels_configured(self, mock_save):
-        # Should complete without error when no channels are active
+    def test_no_channels_configured(self, _mock_save):
         deliver.deliver("report", "2026-05-14")
-        mock_save.assert_called_once()
+        _mock_save.assert_called_once()
 
 
 if __name__ == "__main__":

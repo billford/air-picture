@@ -1,16 +1,13 @@
+# pylint: disable=missing-function-docstring,missing-class-docstring,protected-access,too-many-arguments,too-many-positional-arguments
 """Tests for report formatting helpers."""
 
 import unittest
-
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import report
 
 
 def _flight(icao_hex, callsign=None, altitude_ft=None, speed_kts=None,
-            heading_deg=None, lat=None, lon=None):
+            heading_deg=None, lat=None, lon=None):  # pylint: disable=too-many-arguments,too-many-positional-arguments
     return {
         "icao_hex": icao_hex,
         "callsign": callsign,

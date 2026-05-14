@@ -4,3 +4,6 @@ max-line-length=120
 [DESIGN]
 max-args=6
 max-positional-arguments=6
+
+[TYPECHECK]
+ignored-modules=sdr_mcp

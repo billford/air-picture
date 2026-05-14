@@ -1,12 +1,9 @@
+# pylint: disable=missing-function-docstring,missing-class-docstring,protected-access
 """Tests for anomaly detection logic."""
 
 import types
 import unittest
-from unittest.mock import patch, MagicMock
-
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from unittest.mock import patch
 
 import detect
 

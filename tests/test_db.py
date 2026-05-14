@@ -1,22 +1,19 @@
+# pylint: disable=missing-function-docstring,missing-class-docstring,too-many-arguments,too-many-positional-arguments
 """Tests for database operations using a temporary in-memory DB."""
 
 import tempfile
+import types
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
-
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db
 import config
 
 
 def _make_aircraft(icao_hex, callsign=None, altitude_ft=None, speed_kts=None,
-                   heading_deg=None, lat=None, lon=None):
-    import types
+                   heading_deg=None, lat=None, lon=None):  # pylint: disable=too-many-arguments,too-many-positional-arguments
     return types.SimpleNamespace(
         icao_hex=icao_hex, callsign=callsign, altitude_ft=altitude_ft,
         speed_kts=speed_kts, heading_deg=heading_deg, lat=lat, lon=lon,
@@ -25,7 +22,9 @@ def _make_aircraft(icao_hex, callsign=None, altitude_ft=None, speed_kts=None,
 
 class TestDb(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmp = tempfile.NamedTemporaryFile(  # pylint: disable=consider-using-with
+            suffix=".db", delete=False
+        )
         self.tmp.close()
         self.db_patcher = patch.object(config, "DB_PATH", self.tmp.name)
         self.db_patcher.start()
@@ -40,11 +39,10 @@ class TestDb(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_tables_created(self):
-        conn = db.get_conn()
-        tables = {r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()}
-        conn.close()
+        with db.get_conn() as conn:
+            tables = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()}
         self.assertIn("flights", tables)
         self.assertIn("anomalies", tables)
         self.assertIn("daily_summaries", tables)
@@ -140,22 +138,20 @@ class TestDb(unittest.TestCase):
     def test_save_daily_summary_upserts(self):
         db.save_daily_summary("2026-05-14", 100, 80, 14, 3, "REPORT TEXT")
         db.save_daily_summary("2026-05-14", 110, 90, 15, 4, "UPDATED REPORT")
-        conn = db.get_conn()
-        rows = conn.execute(
-            "SELECT * FROM daily_summaries WHERE date = '2026-05-14'"
-        ).fetchall()
-        conn.close()
+        with db.get_conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM daily_summaries WHERE date = '2026-05-14'"
+            ).fetchall()
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["total_aircraft"], 110)
         self.assertEqual(rows[0]["report_text"], "UPDATED REPORT")
 
     def test_save_daily_summary_persists_fields(self):
         db.save_daily_summary("2026-05-14", 50, 40, 10, 2, "DAILY REPORT")
-        conn = db.get_conn()
-        row = conn.execute(
-            "SELECT * FROM daily_summaries WHERE date = '2026-05-14'"
-        ).fetchone()
-        conn.close()
+        with db.get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM daily_summaries WHERE date = '2026-05-14'"
+            ).fetchone()
         self.assertEqual(row["unique_aircraft"], 40)
         self.assertEqual(row["busiest_hour"], 10)
         self.assertEqual(row["anomaly_count"], 2)
