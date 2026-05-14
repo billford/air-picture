@@ -15,7 +15,7 @@ import os
 import sys
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # sdr_mcp is installed in its own venv; must be on sys.path before local imports.
@@ -169,7 +169,7 @@ def run_report(date_str=None):
 
     import report as report_module  # pylint: disable=import-outside-toplevel
 
-    date_str = date_str or datetime.utcnow().date().isoformat()
+    date_str = date_str or datetime.now(timezone.utc).date().isoformat()
     print(f"[report] Generating air picture for {date_str}…")
 
     text = report_module.generate_report(date_str)
@@ -186,7 +186,7 @@ def run_report(date_str=None):
 
 def run_status():
     """Print today's operational stats to stdout."""
-    today = datetime.utcnow().date().isoformat()
+    today = datetime.now(timezone.utc).date().isoformat()
     flights = db.get_date_flights(today)
     anomalies = db.get_today_anomalies()
     baseline = db.get_rolling_baseline()

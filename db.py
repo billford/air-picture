@@ -1,7 +1,7 @@
 import sqlite3
 import logging
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import config
@@ -84,7 +84,7 @@ def init_db():
 
 def log_aircraft(aircraft_list: list, session_id: str) -> int:
     """Insert or update aircraft records. Returns count of new flights logged."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     merge_cutoff = now - timedelta(hours=config.FLIGHT_MERGE_WINDOW_HOURS)
     new_count = 0
 
@@ -136,7 +136,7 @@ def log_aircraft(aircraft_list: list, session_id: str) -> int:
 def log_anomaly(icao_hex: str, callsign: Optional[str], anomaly_type: str,
                 description: str, altitude_ft: Optional[int] = None):
     """Persist a detected anomaly record to the database."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     with transaction() as conn:
         conn.execute(
             """INSERT INTO anomalies
@@ -150,7 +150,7 @@ def log_anomaly(icao_hex: str, callsign: Optional[str], anomaly_type: str,
 
 def get_today_flights() -> list:
     """Return all flight records logged today (UTC)."""
-    today = datetime.utcnow().date().isoformat()
+    today = datetime.now(timezone.utc).date().isoformat()
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT * FROM flights WHERE date(scan_time) = ? ORDER BY first_seen""",
@@ -171,7 +171,7 @@ def get_date_flights(date_str: str) -> list:
 
 def get_today_anomalies() -> list:
     """Return all anomaly records detected today (UTC)."""
-    today = datetime.utcnow().date().isoformat()
+    today = datetime.now(timezone.utc).date().isoformat()
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT * FROM anomalies WHERE date(detected_at) = ? ORDER BY detected_at""",
@@ -182,7 +182,7 @@ def get_today_anomalies() -> list:
 
 def get_rolling_baseline(days: int = 7) -> dict:
     """Returns average daily stats over the last N days (excluding today)."""
-    today = datetime.utcnow().date()
+    today = datetime.now(timezone.utc).date()
     start = (today - timedelta(days=days)).isoformat()
     end = (today - timedelta(days=1)).isoformat()
 
@@ -207,7 +207,7 @@ def get_rolling_baseline(days: int = 7) -> dict:
 
 def get_callsign_history(callsign: str, days: int = 7) -> list:
     """Return recent records for a given callsign."""
-    cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT * FROM flights WHERE callsign = ? AND scan_time >= ?
@@ -219,7 +219,7 @@ def get_callsign_history(callsign: str, days: int = 7) -> list:
 
 def get_busiest_hour_today() -> Optional[int]:
     """Return the UTC hour (0-23) with the most flight contacts today, or None."""
-    today = datetime.utcnow().date().isoformat()
+    today = datetime.now(timezone.utc).date().isoformat()
     with get_conn() as conn:
         row = conn.execute(
             """SELECT strftime('%H', scan_time) as hr, COUNT(*) as cnt
@@ -233,7 +233,7 @@ def get_busiest_hour_today() -> Optional[int]:
 def save_daily_summary(date_str: str, total: int, unique: int,
                        busiest_hour: Optional[int], anomaly_count: int, report_text: str):
     """Upsert the daily summary record for date_str."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     with transaction() as conn:
         conn.execute(
             """INSERT INTO daily_summaries

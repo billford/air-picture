@@ -1,7 +1,7 @@
 """Generate the daily air picture briefing via Claude API."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import anthropic
@@ -100,10 +100,10 @@ def _format_baseline(baseline: dict, today_count: int) -> str:
 def generate_report(date_str: Optional[str] = None) -> str:
     """Generate and return the daily air picture report text."""
     if date_str is None:
-        date_str = datetime.utcnow().date().isoformat()
+        date_str = datetime.now(timezone.utc).date().isoformat()
 
     flights = db.get_date_flights(date_str)
-    anomalies = db.get_today_anomalies() if date_str == datetime.utcnow().date().isoformat() else []
+    anomalies = db.get_today_anomalies() if date_str == datetime.now(timezone.utc).date().isoformat() else []
     baseline = db.get_rolling_baseline(config.REPORT_DAYS)
     busiest_hour = db.get_busiest_hour_today()
 

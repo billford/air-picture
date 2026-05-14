@@ -1,7 +1,7 @@
 """Anomaly detection for the Air Picture agent."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 import config
@@ -142,7 +142,7 @@ def check_traffic_deviation(baseline: dict) -> List[dict]:
 def check_missing_regulars(baseline_days: int = 7) -> List[dict]:
     """Flag callsigns that appeared on recent days at similar times but are absent today."""
     anomalies = []
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     window_start = now - timedelta(minutes=config.REGULAR_FLIGHT_WINDOW_MINUTES)
     window_end = now + timedelta(minutes=config.REGULAR_FLIGHT_WINDOW_MINUTES)
     cutoff = (now - timedelta(days=baseline_days)).isoformat()

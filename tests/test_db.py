@@ -2,7 +2,7 @@
 
 import tempfile
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -103,7 +103,7 @@ class TestDb(unittest.TestCase):
     def test_get_date_flights_filters_by_date(self):
         ac = _make_aircraft("A12345", callsign="UAL1")
         db.log_aircraft([ac], "sess1")
-        today = datetime.utcnow().date().isoformat()
+        today = datetime.now(timezone.utc).date().isoformat()
         flights = db.get_date_flights(today)
         self.assertEqual(len(flights), 1)
         flights_other = db.get_date_flights("2000-01-01")
