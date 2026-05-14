@@ -1,16 +1,35 @@
-"""Report delivery: file archive, ntfy.sh push, Facebook post."""
+"""Report delivery: file archive, ntfy.sh push, Facebook post, Zapier webhook."""
 
 import json
 import logging
-import os
-import urllib.request
 import urllib.parse
-from datetime import datetime
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import config
 
 logger = logging.getLogger(__name__)
+
+
+def _http_post(
+    url: str,
+    data: bytes,
+    headers: dict,
+    channel: str,
+    timeout: int = 15,
+    success_statuses: tuple = (200,),
+) -> bool:
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status in success_statuses:
+                return True
+            logger.warning("%s returned unexpected status %s", channel, resp.status)
+            return False
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error("%s failed: %s", channel, e)
+        return False
 
 
 def save_to_file(report_text: str, date_str: str) -> str:
@@ -19,115 +38,83 @@ def save_to_file(report_text: str, date_str: str) -> str:
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"airpicture_{date_str}.txt"
     path.write_text(report_text, encoding="utf-8")
-    logger.info(f"Report saved to {path}")
+    logger.info("Report saved to %s", path)
     return str(path)
 
 
 def push_ntfy(report_text: str, date_str: str) -> bool:
-    """Send a summary push via ntfy.sh. Returns True on success."""
+    """Send executive-summary push via ntfy.sh."""
     topic = config.NTFY_TOPIC
     if not topic:
-        logger.debug("NTFY_TOPIC not configured, skipping push")
+        logger.debug("NTFY_TOPIC not configured, skipping")
         return False
 
-    # Extract just the executive summary line (second non-blank line after the header)
-    lines = [l.strip() for l in report_text.splitlines() if l.strip()]
+    lines = [line.strip() for line in report_text.splitlines() if line.strip()]
     summary = lines[1] if len(lines) > 1 else lines[0] if lines else "Air picture ready."
 
-    url = f"https://ntfy.sh/{urllib.parse.quote(topic)}"
-    title = f"Air Picture — {date_str}"
-    message = summary.encode("utf-8")
-
-    req = urllib.request.Request(
-        url,
-        data=message,
-        headers={
-            "Title": title,
-            "Priority": "default",
-            "Tags": "airplane",
-        },
-        method="POST",
+    return _http_post(
+        f"https://ntfy.sh/{urllib.parse.quote(topic)}",
+        data=summary.encode("utf-8"),
+        headers={"Title": f"Air Picture — {date_str}", "Priority": "default", "Tags": "airplane"},
+        channel="ntfy",
+        timeout=10,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            success = resp.status == 200
-            if success:
-                logger.info(f"ntfy push sent to topic '{topic}'")
-            else:
-                logger.warning(f"ntfy push returned {resp.status}")
-            return success
-    except Exception as e:
-        logger.error(f"ntfy push failed: {e}")
-        return False
 
 
 def post_facebook(report_text: str, date_str: str) -> bool:
-    """Post report to Facebook page. Returns True on success."""
+    """Post report to Facebook page."""
     page_id = config.FB_PAGE_ID
     token = config.FB_ACCESS_TOKEN
-
     if not page_id or not token:
-        logger.debug("Facebook credentials not configured, skipping post")
+        logger.debug("Facebook credentials not configured, skipping")
         return False
 
     url = f"https://graph.facebook.com/v19.0/{page_id}/feed"
     message = f"✈️ AIR PICTURE — {date_str}\n\n{report_text}"
     data = urllib.parse.urlencode({"message": message, "access_token": token}).encode()
-
-    req = urllib.request.Request(url, data=data, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            success = resp.status == 200
-            if success:
-                logger.info("Report posted to Facebook page")
-            else:
-                logger.warning(f"Facebook post returned {resp.status}")
-            return success
-    except Exception as e:
-        logger.error(f"Facebook post failed: {e}")
-        return False
+    return _http_post(url, data=data, headers={}, channel="Facebook")
 
 
 def post_zapier_webhook(report_text: str, date_str: str) -> bool:
-    """POST the report to a Zapier webhook. Returns True on success."""
+    """POST the report as JSON to the configured Zapier webhook."""
     url = config.ZAPIER_WEBHOOK_URL
     if not url:
         logger.debug("ZAPIER_WEBHOOK_URL not configured, skipping")
         return False
 
+    if urllib.parse.urlparse(url).scheme != "https":
+        logger.error("ZAPIER_WEBHOOK_URL must use HTTPS")
+        return False
+
     payload = json.dumps({"date": date_str, "report": report_text}).encode("utf-8")
-    req = urllib.request.Request(
+    return _http_post(
         url,
         data=payload,
         headers={"Content-Type": "application/json"},
-        method="POST",
+        channel="Zapier webhook",
+        success_statuses=(200, 201),
     )
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            success = resp.status in (200, 201)
-            if success:
-                logger.info("Report sent to Zapier webhook")
-            else:
-                logger.warning(f"Zapier webhook returned {resp.status}")
-            return success
-    except Exception as e:
-        logger.error(f"Zapier webhook failed: {e}")
-        return False
 
 
 def deliver(report_text: str, date_str: str):
-    """Run all configured delivery channels."""
+    """Run all configured delivery channels; network channels run concurrently."""
     file_path = save_to_file(report_text, date_str)
-    print(f"[deliver] Report archived: {file_path}")
+    logger.info("[deliver] Report archived: %s", file_path)
 
+    channels = []
     if config.NTFY_TOPIC:
-        ok = push_ntfy(report_text, date_str)
-        print(f"[deliver] ntfy push: {'OK' if ok else 'FAILED'}")
-
+        channels.append(("ntfy", push_ntfy))
     if config.FB_PAGE_ID and config.FB_ACCESS_TOKEN:
-        ok = post_facebook(report_text, date_str)
-        print(f"[deliver] Facebook post: {'OK' if ok else 'FAILED'}")
-
+        channels.append(("Facebook", post_facebook))
     if config.ZAPIER_WEBHOOK_URL:
-        ok = post_zapier_webhook(report_text, date_str)
-        print(f"[deliver] Zapier webhook: {'OK' if ok else 'FAILED'}")
+        channels.append(("Zapier webhook", post_zapier_webhook))
+
+    if not channels:
+        return
+
+    with ThreadPoolExecutor(max_workers=len(channels)) as pool:
+        futures = {pool.submit(fn, report_text, date_str): name for name, fn in channels}
+        for future in as_completed(futures):
+            name = futures[future]
+            ok = future.result()
+            logger.info("[deliver] %s: %s", name, "OK" if ok else "FAILED")

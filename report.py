@@ -124,7 +124,7 @@ def generate_report(date_str: Optional[str] = None) -> str:
 
     client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
-    logger.info(f"Generating report for {date_str} ({total} flights, {len(anomalies)} anomalies)")
+    logger.info("Generating report for %s (%s flights, %s anomalies)", date_str, total, len(anomalies))
 
     response = client.messages.create(
         model=config.CLAUDE_MODEL,

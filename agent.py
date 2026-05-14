@@ -18,13 +18,15 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-# Add the mcp-sdr package to path
+# sdr_mcp is installed in its own venv; must be on sys.path before local imports.
 sys.path.insert(0, os.path.expanduser("~/Documents/mcp-sdr"))
 
+# pylint: disable=wrong-import-position
 import config
 import db
 import detect
 import deliver
+# pylint: enable=wrong-import-position
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,10 +41,11 @@ logger = logging.getLogger("air_picture")
 # ---------------------------------------------------------------------------
 
 class LockError(Exception):
-    pass
+    """Raised when the SDR hardware lock cannot be acquired."""
 
 
 def acquire_lock() -> bool:
+    """Atomically create the lock file. Returns False if the lock is already held."""
     lock = Path(config.LOCK_FILE)
 
     # Atomic create: O_CREAT|O_EXCL fails if the file already exists,
@@ -54,9 +57,9 @@ def acquire_lock() -> bool:
     except FileExistsError:
         # Lock exists — check whether the owning PID is still alive
         try:
-            pid = int(lock.read_text().strip())
+            pid = int(lock.read_text(encoding="utf-8").strip())
             os.kill(pid, 0)
-            logger.warning(f"SDR lock held by PID {pid}, skipping scan")
+            logger.warning("SDR lock held by PID %s, skipping scan", pid)
             return False
         except (ValueError, ProcessLookupError, PermissionError):
             # Stale lock — remove and try once more atomically
@@ -73,19 +76,20 @@ def acquire_lock() -> bool:
     # dongle_connected=True is fine — that just means the device is reachable.
     # Block only if mode is not idle (another monitor is actively running).
     try:
-        from sdr_mcp.hardware import get_device, HardwareState
+        from sdr_mcp.hardware import get_device, HardwareState  # pylint: disable=import-outside-toplevel
         dev = get_device()
         if dev.state != HardwareState.IDLE:
-            logger.warning(f"SDR hardware not idle (mode={dev.state.value}), skipping scan")
+            logger.warning("SDR hardware not idle (mode=%s), skipping scan", dev.state.value)
             lock.unlink(missing_ok=True)
             return False
-    except Exception as e:
-        logger.debug(f"Could not check hardware state: {e}")
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.debug("Could not check hardware state: %s", e)
 
     return True
 
 
 def release_lock():
+    """Remove the SDR lock file."""
     Path(config.LOCK_FILE).unlink(missing_ok=True)
 
 
@@ -102,11 +106,11 @@ def run_scan():
     duration_seconds = config.SCAN_DURATION_MINUTES * 60
     session_id = str(uuid.uuid4())[:8]
 
-    logger.info(f"Starting scan [{session_id}] for {config.SCAN_DURATION_MINUTES} min")
+    logger.info("Starting scan [%s] for %s min", session_id, config.SCAN_DURATION_MINUTES)
     print(f"[scan] Session {session_id} — scanning for {config.SCAN_DURATION_MINUTES} min…")
 
     try:
-        from sdr_mcp.adsb import get_adsb_monitor
+        from sdr_mcp.adsb import get_adsb_monitor  # pylint: disable=import-outside-toplevel
 
         monitor = get_adsb_monitor()
         monitor.start()
@@ -114,10 +118,10 @@ def run_scan():
         aircraft_list = monitor.get_aircraft()
         stats = monitor.stop()
 
-        logger.info(f"Scan complete: {len(aircraft_list)} aircraft, {stats}")
+        logger.info("Scan complete: %s aircraft, %s", len(aircraft_list), stats)
 
-    except Exception as e:
-        logger.error(f"Scan failed: {e}")
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error("Scan failed: %s", e)
         print(f"[scan] ERROR: {e}")
         release_lock()
         return
@@ -163,7 +167,7 @@ def run_report(date_str=None):
         print("[report] ERROR: ANTHROPIC_API_KEY not set in .env")
         sys.exit(1)
 
-    import report as report_module
+    import report as report_module  # pylint: disable=import-outside-toplevel
 
     date_str = date_str or datetime.utcnow().date().isoformat()
     print(f"[report] Generating air picture for {date_str}…")
@@ -181,6 +185,7 @@ def run_report(date_str=None):
 # ---------------------------------------------------------------------------
 
 def run_status():
+    """Print today's operational stats to stdout."""
     today = datetime.utcnow().date().isoformat()
     flights = db.get_date_flights(today)
     anomalies = db.get_today_anomalies()
@@ -208,6 +213,7 @@ def run_status():
 # ---------------------------------------------------------------------------
 
 def main():
+    """Parse CLI arguments and dispatch to the appropriate command."""
     parser = argparse.ArgumentParser(description="Air Picture Agent")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--scan", action="store_true", help="Run one scan cycle")

@@ -2,8 +2,7 @@ import sqlite3
 import logging
 from contextlib import contextmanager
 from datetime import datetime, timedelta
-from typing import List, Optional
-import uuid
+from typing import Optional
 
 import config
 
@@ -11,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_conn() -> sqlite3.Connection:
+    """Open and return a configured database connection."""
     conn = sqlite3.connect(config.DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -20,6 +20,7 @@ def get_conn() -> sqlite3.Connection:
 
 @contextmanager
 def transaction():
+    """Context manager that commits on success and rolls back on exception."""
     conn = get_conn()
     try:
         yield conn
@@ -32,6 +33,7 @@ def transaction():
 
 
 def init_db():
+    """Create tables and indexes if they do not already exist."""
     with transaction() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS flights (
@@ -77,7 +79,7 @@ def init_db():
                 generated_at TIMESTAMP
             );
         """)
-    logger.info(f"Database initialized at {config.DB_PATH}")
+    logger.info("Database initialized at %s", config.DB_PATH)
 
 
 def log_aircraft(aircraft_list: list, session_id: str) -> int:
@@ -133,6 +135,7 @@ def log_aircraft(aircraft_list: list, session_id: str) -> int:
 
 def log_anomaly(icao_hex: str, callsign: Optional[str], anomaly_type: str,
                 description: str, altitude_ft: Optional[int] = None):
+    """Persist a detected anomaly record to the database."""
     now = datetime.utcnow()
     with transaction() as conn:
         conn.execute(
@@ -142,10 +145,11 @@ def log_anomaly(icao_hex: str, callsign: Optional[str], anomaly_type: str,
             (icao_hex.upper(), callsign, anomaly_type, description,
              now.isoformat(), altitude_ft, now.isoformat()),
         )
-    logger.info(f"Anomaly logged: [{anomaly_type}] {icao_hex} — {description}")
+    logger.info("Anomaly logged: [%s] %s — %s", anomaly_type, icao_hex, description)
 
 
 def get_today_flights() -> list:
+    """Return all flight records logged today (UTC)."""
     today = datetime.utcnow().date().isoformat()
     with get_conn() as conn:
         rows = conn.execute(
@@ -156,6 +160,7 @@ def get_today_flights() -> list:
 
 
 def get_date_flights(date_str: str) -> list:
+    """Return all flight records for a given date string (YYYY-MM-DD)."""
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT * FROM flights WHERE date(scan_time) = ? ORDER BY first_seen""",
@@ -165,6 +170,7 @@ def get_date_flights(date_str: str) -> list:
 
 
 def get_today_anomalies() -> list:
+    """Return all anomaly records detected today (UTC)."""
     today = datetime.utcnow().date().isoformat()
     with get_conn() as conn:
         rows = conn.execute(
@@ -212,6 +218,7 @@ def get_callsign_history(callsign: str, days: int = 7) -> list:
 
 
 def get_busiest_hour_today() -> Optional[int]:
+    """Return the UTC hour (0-23) with the most flight contacts today, or None."""
     today = datetime.utcnow().date().isoformat()
     with get_conn() as conn:
         row = conn.execute(
@@ -225,6 +232,7 @@ def get_busiest_hour_today() -> Optional[int]:
 
 def save_daily_summary(date_str: str, total: int, unique: int,
                        busiest_hour: Optional[int], anomaly_count: int, report_text: str):
+    """Upsert the daily summary record for date_str."""
     now = datetime.utcnow()
     with transaction() as conn:
         conn.execute(

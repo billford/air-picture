@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional
 
 import config
 import db
@@ -41,13 +41,24 @@ def _is_interesting_callsign(callsign: str) -> bool:
     return any(cs.startswith(p) for p in config.INTERESTING_PREFIXES)
 
 
+def _flag(
+    detected: list,
+    icao: str,
+    callsign: Optional[str],
+    atype: str,
+    desc: str,
+    alt: Optional[int] = None,
+) -> None:
+    db.log_anomaly(icao, callsign, atype, desc, alt)
+    detected.append({"icao_hex": icao, "callsign": callsign, "type": atype, "description": desc})
+
+
 def run_anomaly_detection(aircraft_list: list) -> List[dict]:
-    """
-    Check a list of Aircraft objects against anomaly rules.
+    """Check a list of Aircraft objects against anomaly rules.
+
     Logs any detected anomalies to the database and returns them.
     """
     detected = []
-    now = datetime.utcnow()
 
     for ac in aircraft_list:
         icao = ac.icao_hex.upper()
@@ -55,58 +66,50 @@ def run_anomaly_detection(aircraft_list: list) -> List[dict]:
         speed = ac.speed_kts
         callsign = ac.callsign
 
-        # Very high altitude
         if alt and alt > config.HIGH_ALTITUDE_THRESHOLD_FT:
             desc = (
                 f"Contact at {alt:,} ft — above standard commercial ceiling "
                 f"({config.HIGH_ALTITUDE_THRESHOLD_FT:,} ft). "
                 f"Consistent with large business jet or military. Callsign: {callsign or 'none'}."
             )
-            db.log_anomaly(icao, callsign, "very_high_altitude", desc, alt)
-            detected.append({"icao_hex": icao, "callsign": callsign, "type": "very_high_altitude", "description": desc})
+            _flag(detected, icao, callsign, "very_high_altitude", desc, alt)
 
-        # Very low and fast
         if alt and speed and alt < config.LOW_ALTITUDE_THRESHOLD_FT and speed > config.LOW_ALT_MIN_SPEED_KTS:
             desc = (
                 f"Contact at {alt:,} ft moving {speed:.0f} kts. "
                 f"Low and fast — may indicate military low-level, approach gone wide, "
                 f"or misreported altitude."
             )
-            db.log_anomaly(icao, callsign, "low_and_fast", desc, alt)
-            detected.append({"icao_hex": icao, "callsign": callsign, "type": "low_and_fast", "description": desc})
+            _flag(detected, icao, callsign, "low_and_fast", desc, alt)
 
-        # No callsign at cruise altitude
         if not callsign and alt and alt > 20000:
             desc = (
                 f"Contact {icao} at {alt:,} ft transmitting no callsign. "
                 f"Mode S transponder active but no flight ID broadcast."
             )
-            db.log_anomaly(icao, callsign, "no_callsign_high", desc, alt)
-            detected.append({"icao_hex": icao, "callsign": callsign, "type": "no_callsign_high", "description": desc})
+            _flag(detected, icao, callsign, "no_callsign_high", desc, alt)
 
-        # Hex code classification
         classification = classify_hex(icao)
         if classification["type"] == "military":
             desc = f"ICAO {icao} falls within US military hex range. Callsign: {callsign or 'none'}."
-            db.log_anomaly(icao, callsign, "military_hex", desc, alt)
-            detected.append({"icao_hex": icao, "callsign": callsign, "type": "military_hex", "description": desc})
-
+            _flag(detected, icao, callsign, "military_hex", desc, alt)
         elif classification["type"] == "foreign":
             country = classification["country"]
-            desc = f"ICAO {icao} is registered to {country}. Callsign: {callsign or 'none'}. Altitude: {alt or 'unknown'} ft."
-            db.log_anomaly(icao, callsign, "foreign_registration", desc, alt)
-            detected.append({"icao_hex": icao, "callsign": callsign, "type": "foreign_registration", "description": desc})
-
+            desc = (
+                f"ICAO {icao} is registered to {country}. "
+                f"Callsign: {callsign or 'none'}. Altitude: {alt or 'unknown'} ft."
+            )
+            _flag(detected, icao, callsign, "foreign_registration", desc, alt)
         elif classification["type"] == "unknown":
             desc = f"ICAO {icao} does not fall within any known national allocation range."
-            db.log_anomaly(icao, callsign, "unknown_hex", desc, alt)
-            detected.append({"icao_hex": icao, "callsign": callsign, "type": "unknown_hex", "description": desc})
+            _flag(detected, icao, callsign, "unknown_hex", desc, alt)
 
-        # Interesting callsign prefixes
         if callsign and _is_interesting_callsign(callsign):
-            desc = f"Callsign {callsign} matches government/military prefix list. ICAO: {icao}. Altitude: {alt or 'unknown'} ft."
-            db.log_anomaly(icao, callsign, "interesting_callsign", desc, alt)
-            detected.append({"icao_hex": icao, "callsign": callsign, "type": "interesting_callsign", "description": desc})
+            desc = (
+                f"Callsign {callsign} matches government/military prefix list. "
+                f"ICAO: {icao}. Altitude: {alt or 'unknown'} ft."
+            )
+            _flag(detected, icao, callsign, "interesting_callsign", desc, alt)
 
     return detected
 
@@ -142,48 +145,42 @@ def check_missing_regulars(baseline_days: int = 7) -> List[dict]:
     now = datetime.utcnow()
     window_start = now - timedelta(minutes=config.REGULAR_FLIGHT_WINDOW_MINUTES)
     window_end = now + timedelta(minutes=config.REGULAR_FLIGHT_WINDOW_MINUTES)
-
-    # Build set of callsigns seen in this time window over past N days
     cutoff = (now - timedelta(days=baseline_days)).isoformat()
     today_str = now.date().isoformat()
 
     try:
-        import sqlite3
-        conn = sqlite3.connect(config.DB_PATH)
-        conn.row_factory = sqlite3.Row
+        with db.get_conn() as conn:
+            rows = conn.execute(
+                """SELECT callsign FROM flights
+                   WHERE callsign IS NOT NULL
+                     AND date(scan_time) != ?
+                     AND scan_time >= ?
+                     AND strftime('%H:%M', scan_time) BETWEEN ? AND ?
+                   GROUP BY callsign
+                   HAVING COUNT(DISTINCT date(scan_time)) >= 3""",
+                (today_str, cutoff,
+                 window_start.strftime("%H:%M"),
+                 window_end.strftime("%H:%M")),
+            ).fetchall()
+            regular_callsigns = {r["callsign"] for r in rows}
 
-        rows = conn.execute(
-            """SELECT callsign, strftime('%H:%M', scan_time) as t
-               FROM flights
-               WHERE callsign IS NOT NULL
-                 AND date(scan_time) != ?
-                 AND scan_time >= ?
-                 AND strftime('%H:%M', scan_time) BETWEEN ? AND ?
-               GROUP BY callsign
-               HAVING COUNT(DISTINCT date(scan_time)) >= 3""",
-            (today_str, cutoff,
-             window_start.strftime("%H:%M"),
-             window_end.strftime("%H:%M")),
-        ).fetchall()
+            today_rows = conn.execute(
+                """SELECT DISTINCT callsign FROM flights
+                   WHERE date(scan_time) = ? AND callsign IS NOT NULL""",
+                (today_str,),
+            ).fetchall()
+            today_callsigns = {r["callsign"] for r in today_rows}
 
-        regular_callsigns = {r["callsign"] for r in rows}
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.warning("check_missing_regulars error: %s", e)
+        return anomalies
 
-        # Check which ones haven't shown up today
-        today_rows = conn.execute(
-            "SELECT DISTINCT callsign FROM flights WHERE date(scan_time) = ? AND callsign IS NOT NULL",
-            (today_str,),
-        ).fetchall()
-        today_callsigns = {r["callsign"] for r in today_rows}
-
-        conn.close()
-
-        for cs in regular_callsigns:
-            if cs not in today_callsigns:
-                desc = f"Regular flight {cs} (seen 3+ times at this hour in past {baseline_days} days) has not appeared today."
-                db.log_anomaly("N/A", cs, "missing_regular", desc)
-                anomalies.append({"icao_hex": "N/A", "callsign": cs, "type": "missing_regular", "description": desc})
-
-    except Exception as e:
-        logger.warning(f"check_missing_regulars error: {e}")
+    for cs in regular_callsigns - today_callsigns:
+        desc = (
+            f"Regular flight {cs} (seen 3+ times at this hour "
+            f"in past {baseline_days} days) has not appeared today."
+        )
+        db.log_anomaly("N/A", cs, "missing_regular", desc)
+        anomalies.append({"icao_hex": "N/A", "callsign": cs, "type": "missing_regular", "description": desc})
 
     return anomalies
