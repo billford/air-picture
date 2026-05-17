@@ -16,6 +16,7 @@ OUT_DIR = REPO_ROOT / "docs"
 # ---------------------------------------------------------------------------
 
 def _inline(text: str) -> str:
+    """Apply inline markdown (bold, italic) and HTML-escape the text."""
     text = html_mod.escape(text)
     text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
     text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
@@ -23,6 +24,7 @@ def _inline(text: str) -> str:
 
 
 def md_to_html(text: str) -> str:
+    """Convert the report's markdown subset to an HTML fragment."""
     lines = text.splitlines()
     out: list[str] = []
     para: list[str] = []
@@ -35,11 +37,14 @@ def md_to_html(text: str) -> str:
     for line in lines:
         s = line.strip()
         if s.startswith("## "):
-            flush(); out.append(f"<h2>{_inline(s[3:])}</h2>")
+            flush()
+            out.append(f"<h2>{_inline(s[3:])}</h2>")
         elif s.startswith("# "):
-            flush(); out.append(f"<h1>{_inline(s[2:])}</h1>")
+            flush()
+            out.append(f"<h1>{_inline(s[2:])}</h1>")
         elif s == "---":
-            flush(); out.append("<hr>")
+            flush()
+            out.append("<hr>")
         elif not s:
             flush()
         else:
@@ -49,6 +54,7 @@ def md_to_html(text: str) -> str:
 
 
 def extract_summary(text: str) -> str:
+    """Return the executive summary line, stripped of markdown markup."""
     for line in text.splitlines():
         if "EXECUTIVE SUMMARY" in line:
             clean = re.sub(r"\*\*(.+?)\*\*", r"\1", line.strip())
@@ -237,6 +243,7 @@ FOOTER = """<footer>
 
 
 def page_wrap(title: str, body: str) -> str:
+    """Wrap a body fragment in the full page shell."""
     safe_title = html_mod.escape(title)
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -277,6 +284,7 @@ def load_reports() -> list[dict]:
 
 
 def build_index(reports: list[dict]) -> str:
+    """Return the full HTML for the index page."""
     count = len(reports)
     noun = "briefing" if count == 1 else "briefings"
     items = []
@@ -304,6 +312,7 @@ def build_index(reports: list[dict]) -> str:
 
 
 def build_report_page(report: dict, prev_slug: str | None, next_slug: str | None) -> str:
+    """Return the full HTML for a single report page."""
     content_html = md_to_html(report["text"])
 
     prev_link = f'<a href="{prev_slug}.html">&larr; {prev_slug}</a>' if prev_slug else "<span></span>"
@@ -321,6 +330,7 @@ def build_report_page(report: dict, prev_slug: str | None, next_slug: str | None
 
 
 def build():
+    """Generate docs/ from all report .txt files."""
     if not REPORTS_DIR.exists():
         print(f"[build_site] No reports directory at {REPORTS_DIR}", file=sys.stderr)
         sys.exit(1)

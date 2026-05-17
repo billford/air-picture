@@ -111,7 +111,7 @@ def publish_github_pages(date_str: str) -> bool:
         subprocess.run(["git", "add", "docs/"], cwd=repo, check=True, capture_output=True)
         result = subprocess.run(
             ["git", "diff", "--cached", "--quiet"],
-            cwd=repo, capture_output=True
+            cwd=repo, capture_output=True, check=False
         )
         if result.returncode == 0:
             logger.info("GitHub Pages: docs/ unchanged, skipping commit")
