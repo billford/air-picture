@@ -26,6 +26,7 @@ import config
 import db
 import detect
 import deliver
+import opensky
 # pylint: enable=wrong-import-position
 
 logging.basicConfig(
@@ -121,16 +122,24 @@ def run_scan():
         logger.info("Scan complete: %s aircraft, %s", len(aircraft_list), stats)
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error("Scan failed: %s", e)
-        print(f"[scan] ERROR: {e}")
+        logger.error("Scan failed: %s — falling back to OpenSky", e)
+        print(f"[scan] SDR error ({e}) — trying OpenSky Network fallback…")
         release_lock()
-        return
-    finally:
+        aircraft_list = opensky.fetch_aircraft()
+        if not aircraft_list:
+            print("[scan] No aircraft detected this cycle (SDR error + OpenSky empty).")
+            return
+        print(f"[scan] OpenSky fallback: {len(aircraft_list)} aircraft.")
+    else:
         release_lock()
 
     if not aircraft_list:
-        print("[scan] No aircraft detected this cycle.")
-        return
+        print("[scan] No aircraft from SDR — trying OpenSky Network fallback…")
+        aircraft_list = opensky.fetch_aircraft()
+        if not aircraft_list:
+            print("[scan] No aircraft detected this cycle (SDR + OpenSky both empty).")
+            return
+        print(f"[scan] OpenSky fallback: {len(aircraft_list)} aircraft.")
 
     # Log to database
     new_count = db.log_aircraft(aircraft_list, session_id)
