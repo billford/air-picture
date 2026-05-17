@@ -1,6 +1,7 @@
 """OpenSky Network REST API fallback for when the local SDR is unavailable."""
 
 import logging
+import urllib.error
 import urllib.request
 import json
 import math
@@ -23,6 +24,8 @@ _MS_TO_KTS = 1.94384
 
 @dataclass
 class Aircraft:
+    """ADS-B contact returned by the OpenSky Network REST API."""
+
     icao_hex: str
     callsign: Optional[str]
     altitude_ft: Optional[int]
@@ -57,7 +60,7 @@ def fetch_aircraft(radius_nm: float = 150.0) -> List[Aircraft]:
         req = urllib.request.Request(url, headers={"User-Agent": "air-picture/1.0"})
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read())
-    except Exception as exc:
+    except (urllib.error.URLError, OSError) as exc:
         logger.error("OpenSky fetch failed: %s", exc)
         return []
 

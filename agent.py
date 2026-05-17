@@ -98,6 +98,16 @@ def release_lock():
 # Scan cycle
 # ---------------------------------------------------------------------------
 
+def _check_traffic_baseline(baseline):
+    """Print traffic deviation and missing-regular alerts if enough history exists."""
+    if baseline.get("days_sampled", 0) < 3:
+        return
+    for a in detect.check_traffic_deviation(baseline):
+        print(f"[scan] TRAFFIC: {a['description']}")
+    for a in detect.check_missing_regulars():
+        print(f"[scan] MISSING REGULAR: {a['description']}")
+
+
 def run_scan():
     """Run a single ADS-B scan cycle."""
     if not acquire_lock():
@@ -154,16 +164,7 @@ def run_scan():
 
     # Check traffic baseline deviation (only if we have history)
     baseline = db.get_rolling_baseline()
-    if baseline.get("days_sampled", 0) >= 3:
-        deviation_anomalies = detect.check_traffic_deviation(baseline)
-        if deviation_anomalies:
-            for a in deviation_anomalies:
-                print(f"[scan] TRAFFIC: {a['description']}")
-
-        missing = detect.check_missing_regulars()
-        if missing:
-            for a in missing:
-                print(f"[scan] MISSING REGULAR: {a['description']}")
+    _check_traffic_baseline(baseline)
 
 
 # ---------------------------------------------------------------------------
