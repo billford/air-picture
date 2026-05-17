@@ -2,6 +2,7 @@
 
 import json
 import logging
+import subprocess
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -96,6 +97,37 @@ def post_zapier_webhook(report_text: str, date_str: str) -> bool:
     )
 
 
+def publish_github_pages(date_str: str) -> bool:
+    """Rebuild the static site and push docs/ to trigger GitHub Pages."""
+    repo = Path(__file__).parent
+    try:
+        import build_site  # pylint: disable=import-outside-toplevel
+        build_site.build()
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error("Site build failed: %s", e)
+        return False
+
+    try:
+        subprocess.run(["git", "add", "docs/"], cwd=repo, check=True, capture_output=True)
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
+            cwd=repo, capture_output=True
+        )
+        if result.returncode == 0:
+            logger.info("GitHub Pages: docs/ unchanged, skipping commit")
+            return True
+        subprocess.run(
+            ["git", "commit", "-m", f"site: air picture {date_str}"],
+            cwd=repo, check=True, capture_output=True,
+        )
+        subprocess.run(["git", "push"], cwd=repo, check=True, capture_output=True)
+        logger.info("GitHub Pages: pushed docs/")
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error("GitHub Pages git push failed: %s", e.stderr.decode())
+        return False
+
+
 def deliver(report_text: str, date_str: str):
     """Run all configured delivery channels; network channels run concurrently."""
     file_path = save_to_file(report_text, date_str)
@@ -108,6 +140,8 @@ def deliver(report_text: str, date_str: str):
         channels.append(("Facebook", post_facebook))
     if config.ZAPIER_WEBHOOK_URL:
         channels.append(("Zapier webhook", post_zapier_webhook))
+    if config.GITHUB_PAGES:
+        channels.append(("GitHub Pages", lambda _rt, d: publish_github_pages(d)))
 
     if not channels:
         return

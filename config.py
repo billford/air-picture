@@ -71,6 +71,7 @@ NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
 FB_PAGE_ID = os.getenv("FB_PAGE_ID", "")
 FB_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN", "")
 ZAPIER_WEBHOOK_URL = os.getenv("ZAPIER_WEBHOOK_URL", "")
+GITHUB_PAGES = os.getenv("GITHUB_PAGES", "true").lower() == "true"
 
 # Lock file to avoid conflict with Claude Desktop MCP
 LOCK_FILE = "/tmp/sdr_adsb.lock"
