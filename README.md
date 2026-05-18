@@ -31,30 +31,52 @@ cp .env.example .env
 .venv/bin/python agent.py --report
 ```
 
-## Install crontab
+## Scheduling (macOS launchd)
+
+Four LaunchAgent plists live in `~/Library/LaunchAgents/`:
+
+| Plist | Schedule |
+|-------|----------|
+| `local.air-picture.scan-30min.plist` | Every 30 min, off-peak hours |
+| `local.air-picture.scan-morning.plist` | Every 15 min, 7–9 AM |
+| `local.air-picture.scan-evening.plist` | Every 15 min, 4–7 PM |
+| `local.air-picture.report-daily.plist` | Daily at 10 AM |
+
+Load all agents after initial setup (or after a reboot if they drop):
 
 ```bash
-crontab -l | cat - crontab.txt | crontab -
+for plist in ~/Library/LaunchAgents/local.air-picture.*.plist; do
+    launchctl bootstrap gui/$(id -u) "$plist"
+done
 ```
 
-This installs:
-- Scans every 30 min around the clock
-- Scans every 15 min during peak hours (7–9 AM, 4–7 PM)
-- Report generation at 8 PM daily
+Verify they are running:
+
+```bash
+launchctl list | grep air-picture
+```
+
+To prevent missed reports when the Mac is asleep, schedule a daily wake 5 minutes before the report fires:
+
+```bash
+sudo pmset repeat wake MTWRFSU 09:55:00
+```
 
 ## Conflict management
 
 The agent writes a PID lock file to `/tmp/sdr_adsb.lock` before accessing
 the RTL-SDR dongle. If Claude Desktop is running an ADS-B session, the
-cron job will detect the stale or active lock and skip the cycle cleanly.
+launchd job will detect the stale or active lock and skip the cycle cleanly.
 
 ## Delivery
 
 | Channel | Config key | Notes |
 |---------|-----------|-------|
 | File archive | Always on | `~/air-picture/reports/airpicture_YYYY-MM-DD.txt` |
+| GitHub Pages | `GITHUB_PAGES` (default `true`) | Rebuilds `docs/` and pushes after each report |
 | ntfy.sh push | `NTFY_TOPIC` | Free, no account. Pick any topic name. |
 | Facebook page | `FB_PAGE_ID` + `FB_ACCESS_TOKEN` | Reuses scanner-page token |
+| Zapier webhook | `ZAPIER_WEBHOOK_URL` | POSTs `{date, report}` JSON |
 
 ## File structure
 
@@ -65,9 +87,10 @@ air-picture/
 ├── db.py           # SQLite operations
 ├── detect.py       # Anomaly detection engine
 ├── report.py       # Claude API briefing generation
-├── deliver.py      # File / ntfy / Facebook delivery
+├── deliver.py      # File / ntfy / Facebook / Zapier / GitHub Pages delivery
+├── build_site.py   # Static site generator (reads reports/, writes docs/)
+├── docs/           # Generated GitHub Pages site (committed)
 ├── air_picture.db  # SQLite database (created on --init)
-├── reports/        # Daily report archive
-├── crontab.txt     # Copy-paste crontab entries
+├── reports/        # Daily report archive (gitignored, local only)
 └── .env            # Credentials (gitignored)
 ```
