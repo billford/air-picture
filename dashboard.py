@@ -350,8 +350,7 @@ def _page(title: str, body: str) -> str:
         f'  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
         f'  <title>{safe_title}</title>\n'
         f'  <style>{_CSS}</style>\n'
-        f'  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js">'
-        f'</script>\n'
+        f'  <script src="chart.min.js"></script>\n'
         f'</head>\n<body>\n'
         f'{_HEADER}\n'
         f'<main>{body}</main>\n'
@@ -511,7 +510,8 @@ def build_stats_bar(stats: dict) -> str:
     anomaly_class = "danger" if stats["anomaly_count"] > 10 else ""
     busiest_label = "—"
     if stats["busiest_date"]:
-        busiest_label = f'{_fmt_date(stats["busiest_date"])} · {stats["busiest_count"]:,}'
+        busiest_label = _fmt_date(stats["busiest_date"])
+        busiest_sub = f'{stats["busiest_count"]:,} flights'
 
     def tile(value: str, label: str, sub: str = "", extra_class: str = "") -> str:
         cls = f'stat-value {extra_class}'.strip()
@@ -529,7 +529,7 @@ def build_stats_bar(stats: dict) -> str:
         + tile(f'{stats["total_flights"]:,}', f"Total Flights ({LOOKBACK_DAYS}d)")
         + tile(f'{stats["unique_aircraft"]:,}', f"Unique Aircraft ({LOOKBACK_DAYS}d)")
         + tile(f'{stats["anomaly_count"]:,}', f"Total Anomalies ({LOOKBACK_DAYS}d)", extra_class=anomaly_class)
-        + tile(busiest_label, "Busiest Day")
+        + tile(busiest_label, "Busiest Day (all-time)", sub=busiest_sub)
         + "</div>"
     )
 
