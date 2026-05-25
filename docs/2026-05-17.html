@@ -33,7 +33,15 @@ a:hover { text-decoration: underline; }
 header {
     border-bottom: 1px solid var(--border);
     padding: 12px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
+.site-nav a {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+.site-nav a:hover { color: var(--text); }
 .site-title {
     display: inline-flex;
     align-items: center;
@@ -169,6 +177,9 @@ footer {
     <span class="sep">·</span>
     <span class="location">CHAGRIN FALLS, OH · 41.43°N 81.40°W</span>
   </a>
+  <nav class="site-nav">
+    <a href="dashboard.html">Dashboard</a>
+  </nav>
 </header>
 <main>
 <div class="report-nav">

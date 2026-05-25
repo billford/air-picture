@@ -96,7 +96,15 @@ a:hover { text-decoration: underline; }
 header {
     border-bottom: 1px solid var(--border);
     padding: 12px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
+.site-nav a {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+.site-nav a:hover { color: var(--text); }
 .site-title {
     display: inline-flex;
     align-items: center;
@@ -235,6 +243,9 @@ HEADER = """<header>
     <span class="sep">·</span>
     <span class="location">CHAGRIN FALLS, OH · 41.43°N 81.40°W</span>
   </a>
+  <nav class="site-nav">
+    <a href="dashboard.html">Dashboard</a>
+  </nav>
 </header>"""
 
 FOOTER = """<footer>
@@ -353,6 +364,9 @@ def build():
         (OUT_DIR / f"{report['slug']}.html").write_text(html, encoding="utf-8")
 
     print(f"[build_site] Built {len(reports)} pages → {OUT_DIR}/")
+
+    import dashboard  # pylint: disable=import-outside-toplevel
+    dashboard.build()
 
 
 if __name__ == "__main__":
