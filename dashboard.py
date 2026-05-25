@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build the Air Picture analytics dashboard page."""
-# pylint: disable=duplicate-code  # CSS design tokens intentionally shared with build_site.py
+# pylint: disable=duplicate-code,too-many-lines  # CSS shared with build_site.py; chart JS is verbose
 
 import html as html_mod
 import json
@@ -283,7 +283,7 @@ _HEADER = """<header>
     <span class="location">CHAGRIN FALLS, OH &middot; 41.43&deg;N 81.40&deg;W</span>
   </a>
   <nav class="site-nav">
-    <a href="dashboard.html">Dashboard</a>
+    <a href="index.html">Briefings</a>
   </nav>
 </header>"""
 
@@ -507,11 +507,12 @@ def query_altitude_distribution() -> tuple:
 
 def build_stats_bar(stats: dict) -> str:
     """Render the four top-level summary stat tiles."""
-    anomaly_class = "danger" if stats["anomaly_count"] > 10 else ""
-    busiest_label, busiest_sub = "—", ""
+    per_day = stats["anomaly_count"] / LOOKBACK_DAYS if LOOKBACK_DAYS else 0
+    anomaly_class = "danger" if per_day > 500 else ""
+    busiest_value, busiest_sub = "—", ""
     if stats["busiest_date"]:
-        busiest_label = _fmt_date(stats["busiest_date"])
-        busiest_sub = f'{stats["busiest_count"]:,} flights'
+        busiest_value = f'{stats["busiest_count"]:,}'
+        busiest_sub = _fmt_date(stats["busiest_date"])
 
     def tile(value: str, label: str, sub: str = "", extra_class: str = "") -> str:
         cls = f'stat-value {extra_class}'.strip()
@@ -526,10 +527,10 @@ def build_stats_bar(stats: dict) -> str:
 
     return (
         '<div class="stats-bar">'
-        + tile(f'{stats["total_flights"]:,}', f"Total Flights ({LOOKBACK_DAYS}d)")
+        + tile(f'{stats["total_flights"]:,}', f"Flights ({LOOKBACK_DAYS}d)")
         + tile(f'{stats["unique_aircraft"]:,}', f"Unique Aircraft ({LOOKBACK_DAYS}d)")
-        + tile(f'{stats["anomaly_count"]:,}', f"Total Anomalies ({LOOKBACK_DAYS}d)", extra_class=anomaly_class)
-        + tile(busiest_label, "Busiest Day (all-time)", sub=busiest_sub)
+        + tile(f'{stats["anomaly_count"]:,}', f"Anomalies ({LOOKBACK_DAYS}d)", extra_class=anomaly_class)
+        + tile(busiest_value, "Peak Day (all-time)", sub=busiest_sub)
         + "</div>"
     )
 
@@ -580,7 +581,15 @@ def build_daily_traffic_chart(labels: list, flights: list, anomalies: list) -> s
       responsive: true,
       interaction: {{ mode: 'index', intersect: false }},
       plugins: {{
-        legend: {{ display: false }}
+        legend: {{
+          display: true,
+          labels: {{
+            color: '#c9d1d9',
+            font: {{ family: '"SF Mono","Fira Code",Consolas,monospace', size: 11 }},
+            boxWidth: 12,
+            padding: 16
+          }}
+        }}
       }},
       scales: {{
         x: {{
@@ -589,11 +598,13 @@ def build_daily_traffic_chart(labels: list, flights: list, anomalies: list) -> s
         }},
         y: {{
           position: 'left',
+          title: {{ display: true, text: 'Flights', color: '#6e7681', font: {{ size: 11 }} }},
           ticks: {{ color: '#6e7681', font: {{ family: '"SF Mono","Fira Code",Consolas,monospace', size: 11 }} }},
           grid: {{ color: '#21262d' }}
         }},
         y2: {{
           position: 'right',
+          title: {{ display: true, text: 'Anomalies', color: '#d29922', font: {{ size: 11 }} }},
           ticks: {{ color: '#d29922', font: {{ family: '"SF Mono","Fira Code",Consolas,monospace', size: 11 }} }},
           grid: {{ drawOnChartArea: false }}
         }}
