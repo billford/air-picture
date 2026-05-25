@@ -242,6 +242,39 @@ footer {
 .table-controls select:focus { border-color: var(--accent); }
 .table-controls select { cursor: pointer; }
 
+/* Anomaly glossary */
+.anom-glossary {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-bottom: 8px;
+    font-size: 12px;
+}
+.anom-glossary summary {
+    cursor: pointer;
+    padding: 6px 10px;
+    color: var(--text-muted);
+    font-family: "SF Mono", "Fira Code", Consolas, monospace;
+    list-style: none;
+    user-select: none;
+}
+.anom-glossary summary::-webkit-details-marker { display: none; }
+.anom-glossary summary::before { content: "▶ "; font-size: 9px; }
+details[open] .anom-glossary summary::before { content: "▼ "; }
+.anom-glossary summary:hover { color: var(--text); }
+.gloss-grid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 16px;
+    padding: 8px 12px 10px;
+    border-top: 1px solid var(--border);
+}
+.gloss-type {
+    font-family: "SF Mono", "Fira Code", Consolas, monospace;
+    color: var(--link);
+    white-space: nowrap;
+}
+.gloss-desc { color: var(--text-muted); }
+
 /* Pagination */
 .pagination {
     display: flex;
@@ -290,6 +323,21 @@ _HEADER = """<header>
 _FOOTER = """<footer>
   <p>ADS-B ground station &mdash; Chagrin Falls, Ohio</p>
 </footer>"""
+
+# ── Anomaly type glossary ──────────────────────────────────────────────────────
+
+_ANOMALY_DESCRIPTIONS = {
+    "military_hex": "ICAO hex address falls in a range assigned to military or government aircraft.",
+    "interesting_callsign": "Callsign matches patterns associated with special operations or surveillance.",
+    "low_and_fast": "Aircraft is flying below typical traffic altitudes at unusually high speed.",
+    "very_high_altitude": "Aircraft is operating above FL450, beyond normal commercial cruising levels.",
+    "no_callsign_high": "High-altitude aircraft is broadcasting no callsign — identity cannot be confirmed.",
+    "foreign_registration": "Aircraft registration prefix indicates a non-US origin operating in the area.",
+    "unknown_hex": "ICAO hex code is not found in any known aircraft database.",
+    "traffic_deviation": "Flight path or behavior deviates significantly from expected traffic patterns.",
+    "missing_regular": "A regularly-tracked aircraft has not appeared within its expected time window.",
+}
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -712,7 +760,8 @@ def _anomaly_row(r: dict) -> str:
     cs = f'<span class="accent">{html_mod.escape(cs_raw)}</span>' if cs_raw else "&mdash;"
     icao = html_mod.escape(r.get("icao_hex") or "—")
     atype = r.get("anomaly_type") or ""
-    badge = f'<span class="badge {_badge_class(atype)}">{html_mod.escape(atype)}</span>'
+    atype_desc = html_mod.escape(_ANOMALY_DESCRIPTIONS.get(atype, ""))
+    badge = f'<span class="badge {_badge_class(atype)}" title="{atype_desc}">{html_mod.escape(atype)}</span>'
     desc = html_mod.escape(r.get("description") or "")
     alt = _fmt_alt(r.get("altitude_ft"))
     return (
@@ -743,6 +792,18 @@ def build_anomaly_table(rows: list, total: int = 0, unique_types: list = ()) -> 
         if total > showing else ""
     )
 
+    gloss_rows = "".join(
+        f'<span class="gloss-type">{html_mod.escape(k)}</span>'
+        f'<span class="gloss-desc">{html_mod.escape(v)}</span>'
+        for k, v in _ANOMALY_DESCRIPTIONS.items()
+    )
+    glossary = (
+        '<details class="anom-glossary">'
+        '<summary>Anomaly type definitions</summary>'
+        f'<div class="gloss-grid">{gloss_rows}</div>'
+        '</details>'
+    )
+
     type_options = '<option value="">All types</option>'
     for t in sorted(unique_types):
         escaped = html_mod.escape(t)
@@ -762,6 +823,7 @@ def build_anomaly_table(rows: list, total: int = 0, unique_types: list = ()) -> 
     return (
         f'<div class="dash-section">'
         f'<h2>Anomaly Log &mdash; Last {LOOKBACK_DAYS} Days{cap_note}</h2>'
+        f'{glossary}'
         '<div class="table-controls">'
         '<input type="text" id="anomSearch" placeholder="Search callsign, ICAO, description…" autocomplete="off">'
         f'<select id="anomTypeFilter">{type_options}</select>'
