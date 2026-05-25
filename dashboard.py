@@ -508,7 +508,7 @@ def query_altitude_distribution() -> tuple:
 def build_stats_bar(stats: dict) -> str:
     """Render the four top-level summary stat tiles."""
     anomaly_class = "danger" if stats["anomaly_count"] > 10 else ""
-    busiest_label = "—"
+    busiest_label, busiest_sub = "—", ""
     if stats["busiest_date"]:
         busiest_label = _fmt_date(stats["busiest_date"])
         busiest_sub = f'{stats["busiest_count"]:,} flights'
