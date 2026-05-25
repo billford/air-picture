@@ -9,6 +9,8 @@ from pathlib import Path
 
 import db  # for get_conn() only
 
+NOTABLE_EVENTS_PATH = Path(__file__).parent / "notable_events.json"
+
 REPO_ROOT = Path(__file__).parent
 OUT_DIR = REPO_ROOT / "docs"
 LOOKBACK_DAYS = 14
@@ -241,6 +243,36 @@ footer {
 .table-controls input:focus,
 .table-controls select:focus { border-color: var(--accent); }
 .table-controls select { cursor: pointer; }
+
+/* Notable detections */
+.notable-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+}
+.notable-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+}
+.notable-event {
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 4px;
+}
+.notable-meta {
+    font-family: "SF Mono", "Fira Code", Consolas, monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+.notable-notes {
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.5;
+}
 
 /* Anomaly glossary */
 .anom-glossary {
@@ -551,7 +583,62 @@ def query_altitude_distribution() -> tuple:
     return labels, counts
 
 
+def load_notable_events() -> list:
+    """Return notable events from JSON file, newest-first. Returns [] if missing."""
+    if not NOTABLE_EVENTS_PATH.exists():
+        return []
+    try:
+        events = json.loads(NOTABLE_EVENTS_PATH.read_text(encoding="utf-8"))
+        return sorted(events, key=lambda e: e.get("date", ""), reverse=True)
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
 # ── HTML section builders ──────────────────────────────────────────────────────
+
+def build_notable_section(events: list) -> str:
+    """Render the Notable Detections card grid, or nothing if list is empty."""
+    if not events:
+        return ""
+    cards = []
+    for e in events:
+        dt_str = e.get("date", "")
+        try:
+            label = datetime.fromisoformat(dt_str).strftime("%b %-d, %Y")
+        except (ValueError, AttributeError):
+            label = dt_str
+        time_local = e.get("time_local", "")
+        callsign = html_mod.escape(e.get("callsign") or "—")
+        icao = html_mod.escape(e.get("icao_hex") or "")
+        alt = e.get("altitude_ft")
+        spd = e.get("speed_kts")
+        hdg = e.get("heading_deg")
+        event_name = html_mod.escape(e.get("event") or "")
+        notes = html_mod.escape(e.get("notes") or "")
+        meta_parts = [f"{html_mod.escape(label)}"]
+        if time_local:
+            meta_parts.append(html_mod.escape(time_local))
+        meta_parts.append(f"{callsign} · {icao}")
+        if alt is not None:
+            meta_parts.append(f"{int(alt):,} ft")
+        if spd is not None:
+            meta_parts.append(f"{int(spd)} kts")
+        if hdg is not None:
+            meta_parts.append(f"hdg {int(hdg)}°")
+        cards.append(
+            f'<div class="notable-card">'
+            f'<div class="notable-event">{event_name}</div>'
+            f'<div class="notable-meta">{" · ".join(meta_parts)}</div>'
+            f'<div class="notable-notes">{notes}</div>'
+            f'</div>'
+        )
+    return (
+        '<div class="dash-section">'
+        '<h2>Notable Detections</h2>'
+        f'<div class="notable-grid">{"".join(cards)}</div>'
+        '</div>'
+    )
+
 
 def build_stats_bar(stats: dict) -> str:
     """Render the four top-level summary stat tiles."""
@@ -1044,6 +1131,7 @@ def build() -> None:  # pylint: disable=too-many-locals
 
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     unique_types = sorted({a["anomaly_type"] for a in anomalies if a.get("anomaly_type")})
+    notable = load_notable_events()
 
     charts_row = (
         '<div class="chart-row">'
@@ -1055,6 +1143,7 @@ def build() -> None:  # pylint: disable=too-many-locals
     body = (
         _page_header(ts)
         + build_stats_bar(stats)
+        + build_notable_section(notable)
         + build_daily_traffic_chart(d_labels, d_flights, d_anomalies)
         + charts_row
         + build_callsigns_table(callsigns)

@@ -1,0 +1,13 @@
+[
+  {
+    "date": "2026-05-25",
+    "time_local": "10:05 AM EDT",
+    "callsign": "PITT24",
+    "icao_hex": "AE07DB",
+    "altitude_ft": 3800,
+    "speed_kts": 251,
+    "heading_deg": 92,
+    "event": "Memorial Day Flyover",
+    "notes": "Pennsylvania ANG F-16 on a ceremonial pass — 3,800 ft at 251 kts, military hex range (AE07DB). Slow and low relative to normal fighter transit, consistent with a flyover profile."
+  }
+]
