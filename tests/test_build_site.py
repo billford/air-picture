@@ -1,4 +1,4 @@
-# pylint: disable=missing-function-docstring,missing-class-docstring
+# pylint: disable=missing-function-docstring,missing-class-docstring,protected-access
 """Tests for build_site.py markdown conversion and report loading."""
 
 import unittest

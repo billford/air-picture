@@ -1,4 +1,4 @@
-# pylint: disable=missing-function-docstring,missing-class-docstring
+# pylint: disable=missing-function-docstring,missing-class-docstring,protected-access
 """Tests for dashboard.py helper functions and HTML builders."""
 
 import json
