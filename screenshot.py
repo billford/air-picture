@@ -2,7 +2,7 @@
 """Take screenshots of the dashboard and index pages for the README."""
 
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright  # pylint: disable=import-error
 
 DOCS = Path(__file__).parent / "docs"
 SCREENSHOTS = Path(__file__).parent / "screenshots"
