@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Build the Air Picture analytics dashboard page."""
+# pylint: disable=duplicate-code  # CSS design tokens intentionally shared with build_site.py
 
 import html as html_mod
 import json
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import config
-import db
+import db  # for get_conn() only
 
 REPO_ROOT = Path(__file__).parent
 OUT_DIR = REPO_ROOT / "docs"
@@ -304,22 +303,17 @@ def _badge_class(anomaly_type: str) -> str:
 
 
 def _interpolate_colors(counts: list) -> list:
-    """Return per-bar hex color strings interpolated from chart-2 (low) to chart-1 (high)."""
+    """Return per-bar color strings interpolated from chart-2 blue (low) to chart-1 green (high)."""
     if not counts:
         return []
     lo, hi = min(counts), max(counts)
     span = hi - lo or 1
-    # chart-2: rgb(88,166,255)  chart-1: rgb(63,185,80)
-    lr, lg, lb = 88, 166, 255
-    hr2, hg, hb = 63, 185, 80
-    result = []
-    for c in counts:
+    low_rgb, high_rgb = (88, 166, 255), (63, 185, 80)
+    def _lerp(c):
         t = (c - lo) / span
-        r = int(lr + t * (hr2 - lr))
-        g = int(lg + t * (hg - lg))
-        b = int(lb + t * (hb - lb))
-        result.append(f"rgb({r},{g},{b})")
-    return result
+        ch = tuple(int(a + t * (b - a)) for a, b in zip(low_rgb, high_rgb))
+        return f"rgb({ch[0]},{ch[1]},{ch[2]})"
+    return [_lerp(c) for c in counts]
 
 
 def _fmt_date(iso: str) -> str:
@@ -373,25 +367,23 @@ def _no_data_page() -> str:
 
 # ── Query functions ────────────────────────────────────────────────────────────
 
-def query_summary_stats() -> dict:
+def query_summary_stats() -> dict:  # pylint: disable=too-many-locals
     """Return dict of top-level summary numbers."""
+    lookback = f"-{LOOKBACK_DAYS} days"
     with db.get_conn() as conn:
         total = conn.execute(
-            "SELECT COUNT(*) as n FROM flights "
-            "WHERE scan_time >= date('now', ?)",
-            (f"-{LOOKBACK_DAYS} days",),
+            "SELECT COUNT(*) as n FROM flights WHERE scan_time >= date('now', ?)",
+            (lookback,),
         ).fetchone()["n"]
 
         unique = conn.execute(
-            "SELECT COUNT(DISTINCT icao_hex) as n FROM flights "
-            "WHERE scan_time >= date('now', ?)",
-            (f"-{LOOKBACK_DAYS} days",),
+            "SELECT COUNT(DISTINCT icao_hex) as n FROM flights WHERE scan_time >= date('now', ?)",
+            (lookback,),
         ).fetchone()["n"]
 
         anomaly_count = conn.execute(
-            "SELECT COUNT(*) as n FROM anomalies "
-            "WHERE detected_at >= date('now', ?)",
-            (f"-{LOOKBACK_DAYS} days",),
+            "SELECT COUNT(*) as n FROM anomalies WHERE detected_at >= date('now', ?)",
+            (lookback,),
         ).fetchone()["n"]
 
         busiest = conn.execute(
@@ -399,15 +391,12 @@ def query_summary_stats() -> dict:
             "GROUP BY day ORDER BY cnt DESC LIMIT 1",
         ).fetchone()
 
-    busiest_date = busiest["day"] if busiest else None
-    busiest_count = busiest["cnt"] if busiest else 0
-
     return {
         "total_flights": total,
         "unique_aircraft": unique,
         "anomaly_count": anomaly_count,
-        "busiest_date": busiest_date,
-        "busiest_count": busiest_count,
+        "busiest_date": busiest["day"] if busiest else None,
+        "busiest_count": busiest["cnt"] if busiest else 0,
     }
 
 
@@ -518,6 +507,7 @@ def query_altitude_distribution() -> tuple:
 # ── HTML section builders ──────────────────────────────────────────────────────
 
 def build_stats_bar(stats: dict) -> str:
+    """Render the four top-level summary stat tiles."""
     anomaly_class = "danger" if stats["anomaly_count"] > 10 else ""
     busiest_label = "—"
     if stats["busiest_date"]:
@@ -545,6 +535,7 @@ def build_stats_bar(stats: dict) -> str:
 
 
 def build_daily_traffic_chart(labels: list, flights: list, anomalies: list) -> str:
+    """Render the daily traffic bar chart with anomaly overlay."""
     labels_j = json.dumps(labels)
     flights_j = json.dumps(flights)
     anomalies_j = json.dumps(anomalies)
@@ -614,6 +605,7 @@ def build_daily_traffic_chart(labels: list, flights: list, anomalies: list) -> s
 
 
 def build_hourly_chart(labels: list, counts: list) -> str:
+    """Render the hourly activity bar chart with gradient coloring."""
     labels_j = json.dumps(labels)
     counts_j = json.dumps(counts)
     colors_j = json.dumps(_interpolate_colors(counts))
@@ -657,6 +649,7 @@ def build_hourly_chart(labels: list, counts: list) -> str:
 
 
 def build_callsigns_table(rows: list) -> str:
+    """Render the top-25 callsigns table with live search."""
     if not rows:
         return (
             '<div class="dash-section"><h2>Top Callsigns</h2>'
@@ -701,7 +694,30 @@ def build_callsigns_table(rows: list) -> str:
     )
 
 
+def _anomaly_row(r: dict) -> str:
+    """Render a single anomaly table row."""
+    ts_full = html_mod.escape((r.get("detected_at") or "")[:16].replace("T", " "))
+    cs_raw = r.get("callsign") or ""
+    cs = f'<span class="accent">{html_mod.escape(cs_raw)}</span>' if cs_raw else "&mdash;"
+    icao = html_mod.escape(r.get("icao_hex") or "—")
+    atype = r.get("anomaly_type") or ""
+    badge = f'<span class="badge {_badge_class(atype)}">{html_mod.escape(atype)}</span>'
+    desc = html_mod.escape(r.get("description") or "")
+    alt = _fmt_alt(r.get("altitude_ft"))
+    return (
+        f'<tr data-atype="{html_mod.escape(atype)}">'
+        f'<td class="muted mono">{ts_full}</td>'
+        f'<td class="mono">{cs}</td>'
+        f'<td class="muted mono">{icao}</td>'
+        f'<td>{badge}</td>'
+        f'<td style="max-width:320px;font-size:12px;">{desc}</td>'
+        f'<td class="muted right" data-num="{r.get("altitude_ft") or 0}">{html_mod.escape(alt)}</td>'
+        f'</tr>'
+    )
+
+
 def build_anomaly_table(rows: list, total: int = 0, unique_types: list = ()) -> str:
+    """Render the anomaly log with search, type filter, and pagination."""
     if not rows:
         return (
             '<div class="dash-section"><h2>Anomaly Log</h2>'
@@ -731,28 +747,7 @@ def build_anomaly_table(rows: list, total: int = 0, unique_types: list = ()) -> 
         '<th data-col="5" class="right">Altitude</th>'
         '</tr>'
     )
-    body_rows = []
-    for r in rows:
-        ts_full = html_mod.escape((r.get("detected_at") or "")[:16].replace("T", " "))
-        cs_raw = r.get("callsign") or ""
-        cs = f'<span class="accent">{html_mod.escape(cs_raw)}</span>' if cs_raw else "&mdash;"
-        icao = html_mod.escape(r.get("icao_hex") or "—")
-        atype = r.get("anomaly_type") or ""
-        badge_cls = _badge_class(atype)
-        badge = f'<span class="badge {badge_cls}">{html_mod.escape(atype)}</span>'
-        desc = html_mod.escape(r.get("description") or "")
-        alt = _fmt_alt(r.get("altitude_ft"))
-        body_rows.append(
-            f'<tr data-atype="{html_mod.escape(atype)}">'
-            f'<td class="muted mono">{ts_full}</td>'
-            f'<td class="mono">{cs}</td>'
-            f'<td class="muted mono">{icao}</td>'
-            f'<td>{badge}</td>'
-            f'<td style="max-width:320px;font-size:12px;">{desc}</td>'
-            f'<td class="muted right" data-num="{r.get("altitude_ft") or 0}">'
-            f'{html_mod.escape(alt)}</td>'
-            f'</tr>'
-        )
+    body_rows = [_anomaly_row(r) for r in rows]
     return (
         f'<div class="dash-section">'
         f'<h2>Anomaly Log &mdash; Last {LOOKBACK_DAYS} Days{cap_note}</h2>'
@@ -775,6 +770,7 @@ def build_anomaly_table(rows: list, total: int = 0, unique_types: list = ()) -> 
 
 
 def build_altitude_chart(labels: list, counts: list) -> str:
+    """Render the horizontal altitude distribution bar chart."""
     if not labels:
         return (
             '<div class="dash-section"><h2>Altitude Distribution (all-time)</h2>'
@@ -931,7 +927,18 @@ createTableController({
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 
-def build() -> None:
+def _page_header(ts: str) -> str:
+    """Render the dashboard page header with back-link and build timestamp."""
+    return (
+        '<div class="page-header">'
+        '<p style="margin-bottom:10px;"><a href="index.html">&larr; All Briefings</a></p>'
+        '<h1>Air Picture &mdash; Analytics Dashboard</h1>'
+        f'<p>14-day overview &middot; updated {html_mod.escape(ts)}</p>'
+        '</div>'
+    )
+
+
+def build() -> None:  # pylint: disable=too-many-locals
     """Query DB, assemble dashboard HTML, write docs/dashboard.html."""
     print("[dashboard] Building analytics dashboard…")
     OUT_DIR.mkdir(exist_ok=True)
@@ -963,15 +970,6 @@ def build() -> None:
         return
 
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-    page_header = (
-        '<div class="page-header">'
-        '<p style="margin-bottom:10px;"><a href="index.html">&larr; All Briefings</a></p>'
-        '<h1>Air Picture &mdash; Analytics Dashboard</h1>'
-        f'<p>14-day overview &middot; updated {html_mod.escape(ts)}</p>'
-        '</div>'
-    )
-
     unique_types = sorted({a["anomaly_type"] for a in anomalies if a.get("anomaly_type")})
 
     charts_row = (
@@ -982,7 +980,7 @@ def build() -> None:
     )
 
     body = (
-        page_header
+        _page_header(ts)
         + build_stats_bar(stats)
         + build_daily_traffic_chart(d_labels, d_flights, d_anomalies)
         + charts_row
