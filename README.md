@@ -4,6 +4,12 @@ Monitors aircraft over Chagrin Falls, Ohio throughout the day. Logs all
 ADS-B traffic to SQLite, detects anomalies, and generates a daily
 intelligence-style briefing via Claude.
 
+## Site
+
+| Dashboard | Daily Briefings |
+|-----------|----------------|
+| ![Analytics Dashboard](screenshots/dashboard.png) | ![Daily Briefings](screenshots/index.png) |
+
 ## Setup
 
 ```bash
@@ -88,9 +94,13 @@ air-picture/
 ├── detect.py       # Anomaly detection engine
 ├── report.py       # Claude API briefing generation
 ├── deliver.py      # File / ntfy / Facebook / Zapier / GitHub Pages delivery
-├── build_site.py   # Static site generator (reads reports/, writes docs/)
-├── docs/           # Generated GitHub Pages site (committed)
-├── air_picture.db  # SQLite database (created on --init)
-├── reports/        # Daily report archive (gitignored, local only)
-└── .env            # Credentials (gitignored)
+├── build_site.py       # Static site generator (reads reports/, writes docs/)
+├── dashboard.py        # Analytics dashboard builder (writes docs/dashboard.html)
+├── screenshot.py       # Headless screenshot tool (updates screenshots/)
+├── notable_events.json # Hand-curated notable detections shown on dashboard
+├── docs/               # Generated GitHub Pages site (committed)
+├── screenshots/        # README screenshots (committed)
+├── air_picture.db      # SQLite database (created on --init)
+├── reports/            # Daily report archive (gitignored, local only)
+└── .env                # Credentials (gitignored)
 ```
