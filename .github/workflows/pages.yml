@@ -29,5 +29,27 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs
-      - id: deployment
+      # GitHub's Pages deployment API intermittently returns
+      # "Deployment failed, try again later" for no reason tied to our
+      # content — retry a few times with backoff before giving up.
+      - id: deploy_1
         uses: actions/deploy-pages@v4
+        continue-on-error: true
+      - name: Wait before retry 1
+        if: steps.deploy_1.outcome == 'failure'
+        run: sleep 30
+      - id: deploy_2
+        if: steps.deploy_1.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      - name: Wait before retry 2
+        if: steps.deploy_1.outcome == 'failure' && steps.deploy_2.outcome == 'failure'
+        run: sleep 60
+      - id: deploy_3
+        if: steps.deploy_1.outcome == 'failure' && steps.deploy_2.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+      - id: deployment
+        name: Resolve deployment URL
+        run: |
+          url="${{ steps.deploy_1.outputs.page_url || steps.deploy_2.outputs.page_url || steps.deploy_3.outputs.page_url }}"
+          echo "page_url=$url" >> "$GITHUB_OUTPUT"
