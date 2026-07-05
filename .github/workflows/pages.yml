@@ -15,7 +15,12 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  # Queue rather than cancel: cancelling a run mid-deploy can leave its
+  # Pages deployment resource stuck "in_progress" on GitHub's side,
+  # which then blocks the next deploy with a stale-lock-style
+  # "Deployment failed, try again later." Deploys take well under a
+  # minute and pushes are roughly hourly, so queuing is cheap.
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -48,8 +53,15 @@ jobs:
       - id: deploy_3
         if: steps.deploy_1.outcome == 'failure' && steps.deploy_2.outcome == 'failure'
         uses: actions/deploy-pages@v4
+        continue-on-error: true
+      - name: Wait before retry 3
+        if: steps.deploy_1.outcome == 'failure' && steps.deploy_2.outcome == 'failure' && steps.deploy_3.outcome == 'failure'
+        run: sleep 120
+      - id: deploy_4
+        if: steps.deploy_1.outcome == 'failure' && steps.deploy_2.outcome == 'failure' && steps.deploy_3.outcome == 'failure'
+        uses: actions/deploy-pages@v4
       - id: deployment
         name: Resolve deployment URL
         run: |
-          url="${{ steps.deploy_1.outputs.page_url || steps.deploy_2.outputs.page_url || steps.deploy_3.outputs.page_url }}"
+          url="${{ steps.deploy_1.outputs.page_url || steps.deploy_2.outputs.page_url || steps.deploy_3.outputs.page_url || steps.deploy_4.outputs.page_url }}"
           echo "page_url=$url" >> "$GITHUB_OUTPUT"
