@@ -12,6 +12,7 @@ Usage:
 import argparse
 import logging
 import os
+import subprocess
 import sys
 import time
 import uuid
@@ -165,6 +166,32 @@ def run_scan():
     # Check traffic baseline deviation (only if we have history)
     baseline = db.get_rolling_baseline()
     _check_traffic_baseline(baseline)
+
+    # Rebuild and publish the site immediately when there's new data to
+    # show, rather than waiting for the hourly build-site timer — keeps
+    # incidents from sitting unpublished for up to an hour.
+    if new_count or anomalies:
+        _trigger_site_build()
+
+
+def _trigger_site_build():
+    """Rebuild the site and push to GitHub Pages, mirroring build_and_push.sh's cadence job."""
+    script = Path(__file__).parent / "build_and_push.sh"
+    try:
+        result = subprocess.run(
+            ["/bin/bash", str(script)],
+            cwd=str(script.parent),
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+        if result.returncode != 0:
+            logger.error("Site build/push failed (exit %s): %s", result.returncode, result.stderr.strip())
+        else:
+            logger.info("Site build/push triggered after scan.")
+    except subprocess.TimeoutExpired:
+        logger.error("Site build/push timed out.")
 
 
 # ---------------------------------------------------------------------------
