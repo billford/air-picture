@@ -15,16 +15,17 @@ permissions:
 
 concurrency:
   group: pages
-  # Queue rather than cancel: cancelling a run mid-deploy can leave its
-  # Pages deployment resource stuck "in_progress" on GitHub's side,
-  # which then blocks the next deploy with a stale-lock-style
-  # "Deployment failed, try again later." Deploys take well under a
-  # minute and pushes are roughly hourly, so queuing is cheap.
-  cancel-in-progress: false
+  # Cancel, don't queue: with the site now rebuilding on every scan with
+  # new data (as often as every 15 min), an unbounded queue backs up
+  # fast — a single stuck run blocked every deploy behind it for hours
+  # on 2026-07-09. The most recent push always has the freshest data
+  # anyway, so cancelling superseded runs is strictly better here.
+  cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
