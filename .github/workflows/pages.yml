@@ -25,7 +25,11 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Must stay well above deploy-pages' own 10-minute polling timeout. When
+    # both were 10, a slow Pages rollout killed the job at the exact moment
+    # attempt 1 timed out, so the retry chain below never ran and the run
+    # alerted as failed. 25 leaves room for two stalled attempts.
+    timeout-minutes: 25
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
