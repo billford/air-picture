@@ -11,3 +11,6 @@ air_picture.log
 # build_and_push.sh, so committing it only served to fire four CI workflows
 # per data refresh - about 96 times a day - on HTML no linter cares about.
 docs/
+
+# wrangler deploy cache
+.wrangler/
