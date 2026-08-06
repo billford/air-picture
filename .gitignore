@@ -6,3 +6,8 @@ reports/
 .env
 air_picture.log
 /tmp/
+
+# Generated site output. Published straight to Cloudflare Pages by
+# build_and_push.sh, so committing it only served to fire four CI workflows
+# per data refresh - about 96 times a day - on HTML no linter cares about.
+docs/
