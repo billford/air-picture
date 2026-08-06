@@ -145,7 +145,12 @@ def log_anomaly(icao_hex: str, callsign: Optional[str], anomaly_type: str,
             (icao_hex.upper(), callsign, anomaly_type, description,
              now.isoformat(), altitude_ft, now.isoformat()),
         )
-    logger.info("Anomaly logged: [%s] %s — %s", anomaly_type, icao_hex, description)
+    # DEBUG, not INFO: this fires once per detected anomaly, and every caller
+    # already reports what it found. At INFO it duplicated each `[scan]` line,
+    # and with missing_regular alone accounting for 79% of all anomalies the
+    # pair built a 44MB log in 87 days. The row itself is still written above -
+    # the visualisations read the table, not the log.
+    logger.debug("Anomaly logged: [%s] %s — %s", anomaly_type, icao_hex, description)
 
 
 def get_today_flights() -> list:

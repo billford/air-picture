@@ -26,6 +26,10 @@ log() { echo "[build_and_push] $*" | tee -a "$LOG"; }
 
 cd "$REPO"
 
+# Bound the log before appending to it. launchd holds this file's descriptor, so
+# the trim is in place rather than a rename - see logs.py.
+"$REPO/.venv/bin/python" -c "import logs; logs.trim_in_place()" || true
+
 log "Running build_site.py…"
 "$REPO/.venv/bin/python" "$REPO/build_site.py"
 

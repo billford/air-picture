@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.expanduser("~/Documents/mcp-sdr"))
 import config
 import db
 import detect
+import logs
 import deliver
 import opensky
 # pylint: enable=wrong-import-position
@@ -105,12 +106,28 @@ def _check_traffic_baseline(baseline):
         return
     for a in detect.check_traffic_deviation(baseline):
         print(f"[scan] TRAFFIC: {a['description']}")
-    for a in detect.check_missing_regulars():
-        print(f"[scan] MISSING REGULAR: {a['description']}")
+
+    # Summarised rather than one line each. A missing regular is both normal and
+    # numerous - it fires for every routine flight that hasn't shown up yet
+    # today, so it scales with the size of the baseline rather than with
+    # anything having happened, and printing each one drowned the scan output it
+    # sat in. Every anomaly is still recorded individually by
+    # check_missing_regulars(); this changes only what reaches the log.
+    missing = detect.check_missing_regulars()
+    if missing:
+        callsigns = sorted({a["callsign"] for a in missing if a.get("callsign")})
+        shown = ", ".join(callsigns[:12])
+        if len(callsigns) > 12:
+            shown += f", +{len(callsigns) - 12} more"
+        print(f"[scan] MISSING REGULAR: {len(missing)} absent — {shown}")
 
 
 def run_scan():
     """Run a single ADS-B scan cycle."""
+    # Before anything writes to it. launchd owns this file's descriptor, so the
+    # trim is in place rather than a rename - see logs.py.
+    logs.trim_in_place()
+
     if not acquire_lock():
         print("[scan] SDR busy (lock file present). Skipping this cycle.")
         return
