@@ -22,6 +22,12 @@ REPO="$(cd "$(dirname "$0")" && pwd)"
 LOG="$REPO/air_picture.log"
 PROJECT="air-picture"
 
+# launchd starts jobs with PATH=/usr/bin:/bin:/usr/sbin:/sbin - it does not read
+# the login shell's profile, so Homebrew's bin is absent and npx is simply not
+# there. That is how this script ran fine by hand and died with exit 127 on
+# every scheduled run for a full day after the move to Pages.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 log() { echo "[build_and_push] $*" | tee -a "$LOG"; }
 
 cd "$REPO"
@@ -37,6 +43,13 @@ if [ ! -f "$REPO/docs/index.html" ]; then
     # Deploying an empty or half-built docs/ would replace a good site with a
     # broken one, and Pages has no notion of "this looks wrong, keep the last".
     log "ERROR: docs/index.html missing after build - refusing to deploy."
+    exit 1
+fi
+
+if ! command -v npx >/dev/null 2>&1; then
+    # Say which tool is missing and where we looked, rather than leaving a bare
+    # "npx: command not found" from inside the pipeline below.
+    log "ERROR: npx not found on PATH ($PATH) - cannot deploy. Is node installed?"
     exit 1
 fi
 

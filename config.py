@@ -1,3 +1,5 @@
+"""Configuration for the Air Picture agent: location, thresholds, paths and credentials."""
+
 import os
 from pathlib import Path
 
@@ -79,5 +81,28 @@ LOCK_FILE = "/tmp/sdr_adsb.lock"
 # Database
 DB_PATH = str(Path(__file__).parent / "air_picture.db")
 
-# SDR MCP package path (installed in mcp-sdr venv)
-SDR_MCP_PATH = os.path.expanduser("~/Documents/mcp-sdr")
+# SDR MCP package path (installed in mcp-sdr venv).
+#
+# This was a bare hardcoded path to ~/Documents/mcp-sdr. When the repo moved to
+# ~/Projects, every scan lost the SDR and silently fell back to OpenSky - the
+# import error read "No module named 'sdr_mcp'", which looks like a missing
+# install rather than a stale path, so it went unnoticed for weeks.
+#
+# Resolve against the places it actually lives, newest layout first, and let
+# the environment override. SDR_MCP_PATH stays a plain string so callers can
+# keep doing sys.path.insert() with it.
+_SDR_MCP_CANDIDATES = ("~/Projects/mcp-sdr", "~/Documents/mcp-sdr")
+
+def _resolve_sdr_mcp_path() -> str:
+    """First candidate that actually contains the sdr_mcp package."""
+    override = os.getenv("SDR_MCP_PATH", "")
+    candidates = (override,) + _SDR_MCP_CANDIDATES if override else _SDR_MCP_CANDIDATES
+    for candidate in candidates:
+        resolved = Path(candidate).expanduser()
+        if (resolved / "sdr_mcp" / "__init__.py").exists():
+            return str(resolved)
+    # Nothing found: return the preferred location so the failure names a real
+    # path instead of an empty string.
+    return str(Path(_SDR_MCP_CANDIDATES[0]).expanduser())
+
+SDR_MCP_PATH = _resolve_sdr_mcp_path()

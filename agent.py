@@ -19,11 +19,14 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-# sdr_mcp is installed in its own venv; must be on sys.path before local imports.
-sys.path.insert(0, os.path.expanduser("~/Documents/mcp-sdr"))
-
 # pylint: disable=wrong-import-position
 import config
+
+# sdr_mcp lives in the mcp-sdr checkout, not this venv. config resolves where
+# that actually is - this used to repeat the path literal, so the two drifted
+# apart and both went stale when the checkout moved.
+sys.path.insert(0, config.SDR_MCP_PATH)
+
 import db
 import detect
 import logs
@@ -122,6 +125,16 @@ def _check_traffic_baseline(baseline):
         print(f"[scan] MISSING REGULAR: {len(missing)} absent — {shown}")
 
 
+def _opensky_fallback(reason: str) -> list:
+    """Fetch from OpenSky, reporting how we got here. Returns [] if it too is empty."""
+    aircraft_list = opensky.fetch_aircraft()
+    if not aircraft_list:
+        print(f"[scan] No aircraft detected this cycle ({reason} + OpenSky empty).")
+        return []
+    print(f"[scan] OpenSky fallback: {len(aircraft_list)} aircraft.")
+    return aircraft_list
+
+
 def run_scan():
     """Run a single ADS-B scan cycle."""
     # Before anything writes to it. launchd owns this file's descriptor, so the
@@ -149,25 +162,36 @@ def run_scan():
 
         logger.info("Scan complete: %s aircraft, %s", len(aircraft_list), stats)
 
+    except ImportError as e:
+        # Not a hardware fault: sdr_mcp isn't importable at all, so no scan will
+        # ever succeed until someone fixes the path or the install. That is a
+        # different problem from "the dongle is busy", and reporting it as a
+        # generic SDR error is what let a stale path hide behind the fallback
+        # for weeks. Name the path we actually tried.
+        logger.error(
+            "sdr_mcp not importable from %s (%s) — SDR disabled, falling back to "
+            "OpenSky. Check config.SDR_MCP_PATH or set $SDR_MCP_PATH.",
+            config.SDR_MCP_PATH, e,
+        )
+        print(f"[scan] SDR UNAVAILABLE: sdr_mcp not importable from {config.SDR_MCP_PATH}")
+        print("[scan] Falling back to OpenSky Network (reduced coverage)…")
+        release_lock()
+        aircraft_list = _opensky_fallback("no SDR")
+
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Scan failed: %s — falling back to OpenSky", e)
         print(f"[scan] SDR error ({e}) — trying OpenSky Network fallback…")
         release_lock()
-        aircraft_list = opensky.fetch_aircraft()
-        if not aircraft_list:
-            print("[scan] No aircraft detected this cycle (SDR error + OpenSky empty).")
-            return
-        print(f"[scan] OpenSky fallback: {len(aircraft_list)} aircraft.")
+        aircraft_list = _opensky_fallback("SDR error")
     else:
         release_lock()
 
     if not aircraft_list:
         print("[scan] No aircraft from SDR — trying OpenSky Network fallback…")
-        aircraft_list = opensky.fetch_aircraft()
-        if not aircraft_list:
-            print("[scan] No aircraft detected this cycle (SDR + OpenSky both empty).")
-            return
-        print(f"[scan] OpenSky fallback: {len(aircraft_list)} aircraft.")
+        aircraft_list = _opensky_fallback("SDR")
+
+    if not aircraft_list:
+        return
 
     # Log to database
     new_count = db.log_aircraft(aircraft_list, session_id)
