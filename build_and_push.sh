@@ -16,7 +16,7 @@
 # about three seconds and depends on no runner, no OIDC token and no queue.
 # docs/ is no longer committed at all, so the lint workflows only run when the
 # code actually changes.
-set -euo pipefail
+set -Eeuo pipefail
 
 REPO="$(cd "$(dirname "$0")" && pwd)"
 LOG="$REPO/air_picture.log"
@@ -29,6 +29,23 @@ PROJECT="air-picture"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 log() { echo "[build_and_push] $*" | tee -a "$LOG"; }
+
+# Push a pipeline alert. Never allowed to fail the deploy: a broken notifier
+# must not become a broken publish.
+alert() { "$REPO/.venv/bin/python" -m alerts "$1" "site deploy" "$2" >>"$LOG" 2>&1 || true; }
+
+# One EXIT trap rather than ERR, so it also catches the explicit `exit 1`
+# guards below - those do not fire ERR. Any non-zero exit notifies once, then
+# stays quiet until it recovers or ALERT_REPEAT_HOURS passes; see alerts.py.
+#
+# This exists because the npx/PATH breakage below failed 105 times in a day and
+# said so only in a logfile nobody had reason to open.
+on_exit() {
+    local code=$?
+    [ "$code" -eq 0 ] && return 0
+    alert failure "$(printf 'Exit %s.\n\nLast log lines:\n%s' "$code" "$(tail -n 12 "$LOG")")"
+}
+trap on_exit EXIT
 
 cd "$REPO"
 
@@ -58,3 +75,7 @@ npx --yes wrangler pages deploy "$REPO/docs" \
     --project-name "$PROJECT" --branch main --commit-dirty=true 2>&1 | tee -a "$LOG"
 
 log "Published to https://${PROJECT}.pages.dev"
+
+# Only says anything if the previous run was failing, so the ~96 healthy runs a
+# day stay silent.
+alert recovery "Site is publishing again: https://${PROJECT}.pages.dev"

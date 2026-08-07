@@ -69,14 +69,30 @@ CLAUDE_MODEL = "claude-sonnet-4-6"
 
 # Delivery
 REPORT_OUTPUT_DIR = os.path.expanduser("~/air-picture/reports")
+# ntfy. NTFY_URL points at the self-hosted, access-controlled server the other
+# projects (waterguru, rachio) use; unset, it falls back to public ntfy.sh. That
+# server refuses anonymous requests, so NTFY_USER/NTFY_PASS are required there -
+# without them every push comes back 403.
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
+NTFY_URL = os.getenv("NTFY_URL", "https://ntfy.sh").rstrip("/")
+NTFY_USER = os.getenv("NTFY_USER", "")
+NTFY_PASS = os.getenv("NTFY_PASS", "")
 FB_PAGE_ID = os.getenv("FB_PAGE_ID", "")
 FB_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN", "")
 ZAPIER_WEBHOOK_URL = os.getenv("ZAPIER_WEBHOOK_URL", "")
-GITHUB_PAGES = os.getenv("GITHUB_PAGES", "true").lower() == "true"
+# Publishing moved from GitHub Pages to Cloudflare Pages; GITHUB_PAGES is still
+# honoured so an existing .env keeps working.
+PUBLISH_SITE = os.getenv("PUBLISH_SITE", os.getenv("GITHUB_PAGES", "true")).lower() == "true"
 
 # Lock file to avoid conflict with Claude Desktop MCP
 LOCK_FILE = "/tmp/sdr_adsb.lock"
+
+# Operational alerts (alerts.py) — pipeline breakage, not aircraft.
+# Reuses NTFY_TOPIC: one more channel to configure is one more to forget.
+# The repeat interval matters more than it looks: build_and_push.sh runs after
+# every scan, so an unthrottled failure alert is ~96 pushes a day.
+ALERT_STATE_FILE = str(Path(__file__).parent / ".alert_state.json")
+ALERT_REPEAT_HOURS = float(os.getenv("ALERT_REPEAT_HOURS", "6"))
 
 # Database
 DB_PATH = str(Path(__file__).parent / "air_picture.db")

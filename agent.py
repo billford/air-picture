@@ -27,6 +27,7 @@ import config
 # apart and both went stale when the checkout moved.
 sys.path.insert(0, config.SDR_MCP_PATH)
 
+import alerts
 import db
 import detect
 import logs
@@ -216,7 +217,7 @@ def run_scan():
 
 
 def _trigger_site_build():
-    """Rebuild the site and push to GitHub Pages, mirroring build_and_push.sh's cadence job."""
+    """Rebuild the site and publish it, mirroring build_and_push.sh's cadence job."""
     script = Path(__file__).parent / "build_and_push.sh"
     try:
         result = subprocess.run(
@@ -228,11 +229,20 @@ def _trigger_site_build():
             check=False,
         )
         if result.returncode != 0:
+            # The script's own EXIT trap raises the alert - it has the full log
+            # tail and the throttle state, and alerting here too would double
+            # every notification.
             logger.error("Site build/push failed (exit %s): %s", result.returncode, result.stderr.strip())
         else:
             logger.info("Site build/push triggered after scan.")
     except subprocess.TimeoutExpired:
+        # The one path the script cannot report on: we killed it, so its EXIT
+        # trap never ran. Alert from here instead.
         logger.error("Site build/push timed out.")
+        alerts.notify_failure(
+            "site deploy",
+            "Timed out after 300s and was killed; no deploy happened.",
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 """Report delivery: file archive, ntfy.sh push, Facebook post, Zapier webhook."""
 
+import base64
 import json
 import logging
 import subprocess
@@ -13,7 +14,7 @@ import config
 logger = logging.getLogger(__name__)
 
 
-def _http_post(
+def http_post(
     url: str,
     data: bytes,
     headers: dict,
@@ -21,6 +22,7 @@ def _http_post(
     timeout: int = 15,
     success_statuses: tuple = (200,),
 ) -> bool:
+    """POST and report success as a bool. Shared with alerts.py, hence public."""
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -31,6 +33,47 @@ def _http_post(
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("%s failed: %s", channel, e)
         return False
+
+
+def _header_safe(text: str) -> str:
+    """Fold a title down to something an HTTP header can legally carry.
+
+    urllib encodes headers as latin-1, so the em dash in "Air Picture — 2026-08-07"
+    raises UnicodeEncodeError and loses the notification entirely. The message
+    body is unaffected: that travels as UTF-8 bytes, not a header.
+    """
+    swaps = {"—": "-", "–": "-", "’": "'", "‘": "'", "“": '"', "”": '"', "…": "..."}
+    for bad, good in swaps.items():
+        text = text.replace(bad, good)
+    # Anything still outside latin-1 is dropped rather than allowed to raise.
+    return text.encode("latin-1", "ignore").decode("latin-1")
+
+
+def ntfy_post(title: str, message: str, priority: str = "default", tags: str = "airplane") -> bool:
+    """Push one ntfy notification. The single ntfy path — reports and alerts both use it.
+
+    Auth matters here: NTFY_URL names a self-hosted server that refuses
+    anonymous requests, so a push without NTFY_USER/NTFY_PASS returns 403.
+    Unset, it falls back to public ntfy.sh and sends unauthenticated.
+    """
+    if not config.NTFY_TOPIC:
+        logger.debug("NTFY_TOPIC not configured, not sending: %s", title)
+        return False
+
+    headers = {"Title": _header_safe(title), "Priority": priority, "Tags": tags}
+    if config.NTFY_USER and config.NTFY_PASS:
+        token = base64.b64encode(
+            f"{config.NTFY_USER}:{config.NTFY_PASS}".encode("utf-8")
+        ).decode("ascii")
+        headers["Authorization"] = f"Basic {token}"
+
+    return http_post(
+        f"{config.NTFY_URL}/{urllib.parse.quote(config.NTFY_TOPIC)}",
+        data=message.encode("utf-8"),
+        headers=headers,
+        channel="ntfy",
+        timeout=10,
+    )
 
 
 def save_to_file(report_text: str, date_str: str) -> str:
@@ -44,22 +87,10 @@ def save_to_file(report_text: str, date_str: str) -> str:
 
 
 def push_ntfy(report_text: str, date_str: str) -> bool:
-    """Send executive-summary push via ntfy.sh."""
-    topic = config.NTFY_TOPIC
-    if not topic:
-        logger.debug("NTFY_TOPIC not configured, skipping")
-        return False
-
+    """Send executive-summary push via ntfy."""
     lines = [line.strip() for line in report_text.splitlines() if line.strip()]
     summary = lines[1] if len(lines) > 1 else lines[0] if lines else "Air picture ready."
-
-    return _http_post(
-        f"https://ntfy.sh/{urllib.parse.quote(topic)}",
-        data=summary.encode("utf-8"),
-        headers={"Title": f"Air Picture — {date_str}", "Priority": "default", "Tags": "airplane"},
-        channel="ntfy",
-        timeout=10,
-    )
+    return ntfy_post(f"Air Picture — {date_str}", summary)
 
 
 def post_facebook(report_text: str, date_str: str) -> bool:
@@ -73,7 +104,7 @@ def post_facebook(report_text: str, date_str: str) -> bool:
     url = f"https://graph.facebook.com/v19.0/{page_id}/feed"
     message = f"✈️ AIR PICTURE — {date_str}\n\n{report_text}"
     data = urllib.parse.urlencode({"message": message, "access_token": token}).encode()
-    return _http_post(url, data=data, headers={}, channel="Facebook")
+    return http_post(url, data=data, headers={}, channel="Facebook")
 
 
 def post_zapier_webhook(report_text: str, date_str: str) -> bool:
@@ -88,7 +119,7 @@ def post_zapier_webhook(report_text: str, date_str: str) -> bool:
         return False
 
     payload = json.dumps({"date": date_str, "report": report_text}).encode("utf-8")
-    return _http_post(
+    return http_post(
         url,
         data=payload,
         headers={"Content-Type": "application/json"},
@@ -97,35 +128,35 @@ def post_zapier_webhook(report_text: str, date_str: str) -> bool:
     )
 
 
-def publish_github_pages(date_str: str) -> bool:
-    """Rebuild the static site and push docs/ to trigger GitHub Pages."""
-    repo = Path(__file__).parent
+def publish_site(_date_str: str) -> bool:
+    """Rebuild the static site and publish it to Cloudflare Pages.
+
+    This used to build docs/ and then git add / commit / push it, back when
+    GitHub Actions served the site. Publishing moved to Cloudflare Pages and
+    docs/ became gitignored, which quietly turned this into a no-op that still
+    reported success: `git add docs/` staged nothing, so the `--cached --quiet`
+    check saw no diff, logged "docs/ unchanged, skipping commit" and returned
+    True on every daily report.
+
+    Delegating to build_and_push.sh keeps one publish path instead of two, and
+    means the deploy alerting in that script covers this caller too.
+    """
+    script = Path(__file__).parent / "build_and_push.sh"
     try:
-        import build_site  # pylint: disable=import-outside-toplevel
-        build_site.build()
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error("Site build failed: %s", e)
+        result = subprocess.run(
+            ["/bin/bash", str(script)],
+            cwd=str(script.parent), capture_output=True, text=True,
+            timeout=300, check=False,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error("Site publish timed out")
         return False
 
-    try:
-        subprocess.run(["git", "add", "docs/"], cwd=repo, check=True, capture_output=True)
-        result = subprocess.run(
-            ["git", "diff", "--cached", "--quiet"],
-            cwd=repo, capture_output=True, check=False
-        )
-        if result.returncode == 0:
-            logger.info("GitHub Pages: docs/ unchanged, skipping commit")
-            return True
-        subprocess.run(
-            ["git", "commit", "-m", f"site: air picture {date_str}"],
-            cwd=repo, check=True, capture_output=True,
-        )
-        subprocess.run(["git", "push"], cwd=repo, check=True, capture_output=True)
-        logger.info("GitHub Pages: pushed docs/")
-        return True
-    except subprocess.CalledProcessError as e:
-        logger.error("GitHub Pages git push failed: %s", e.stderr.decode())
+    if result.returncode != 0:
+        logger.error("Site publish failed (exit %s): %s", result.returncode, result.stderr.strip())
         return False
+    logger.info("Site published to Cloudflare Pages")
+    return True
 
 
 def deliver(report_text: str, date_str: str):
@@ -140,8 +171,8 @@ def deliver(report_text: str, date_str: str):
         channels.append(("Facebook", post_facebook))
     if config.ZAPIER_WEBHOOK_URL:
         channels.append(("Zapier webhook", post_zapier_webhook))
-    if config.GITHUB_PAGES:
-        channels.append(("GitHub Pages", lambda _rt, d: publish_github_pages(d)))
+    if config.PUBLISH_SITE:
+        channels.append(("site publish", lambda _rt, d: publish_site(d)))
 
     if not channels:
         return

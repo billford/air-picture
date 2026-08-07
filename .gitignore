@@ -4,6 +4,7 @@ __pycache__/
 air_picture.db
 reports/
 .env
+.env.bak*
 air_picture.log
 /tmp/
 
@@ -14,3 +15,6 @@ docs/
 
 # wrangler deploy cache
 .wrangler/
+
+# alerts.py throttle state — local runtime state, not configuration
+.alert_state.json
