@@ -80,6 +80,16 @@ NTFY_PASS = os.getenv("NTFY_PASS", "")
 FB_PAGE_ID = os.getenv("FB_PAGE_ID", "")
 FB_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN", "")
 ZAPIER_WEBHOOK_URL = os.getenv("ZAPIER_WEBHOOK_URL", "")
+# Email. Plain SMTP so any provider works. For Cloudflare Email Sending:
+# SMTP_HOST=smtp.mx.cloudflare.net, SMTP_PORT=465, SMTP_USER=api_token,
+# SMTP_PASS=<API token with Email Sending: Edit>, and EMAIL_FROM on a domain
+# onboarded for Email Sending. Port 465 is implicit TLS; anything else STARTTLS.
+EMAIL_TO = os.getenv("EMAIL_TO", "")
+EMAIL_FROM = os.getenv("EMAIL_FROM", "")
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASS = os.getenv("SMTP_PASS", "")
 # Publishing moved from GitHub Pages to Cloudflare Pages; GITHUB_PAGES is still
 # honoured so an existing .env keeps working.
 PUBLISH_SITE = os.getenv("PUBLISH_SITE", os.getenv("GITHUB_PAGES", "true")).lower() == "true"

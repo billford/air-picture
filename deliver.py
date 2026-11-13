@@ -1,12 +1,16 @@
-"""Report delivery: file archive, ntfy.sh push, Facebook post, Zapier webhook."""
+"""Report delivery: file archive, email, ntfy push, Facebook post, Zapier webhook."""
 
 import base64
 import json
 import logging
+import smtplib
+import ssl
 import subprocess
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from email.message import EmailMessage
+from email.utils import formataddr, formatdate, make_msgid
 from pathlib import Path
 
 import config
@@ -128,6 +132,47 @@ def post_zapier_webhook(report_text: str, date_str: str) -> bool:
     )
 
 
+def email_configured() -> bool:
+    """True when every setting send_email needs is present."""
+    return all((config.EMAIL_TO, config.EMAIL_FROM, config.SMTP_HOST,
+                config.SMTP_USER, config.SMTP_PASS))
+
+
+def send_email(report_text: str, date_str: str) -> bool:
+    """Email the full report as plain text over SMTP.
+
+    EMAIL_TO may hold several comma-separated addresses.
+    """
+    if not email_configured():
+        logger.debug("Email not configured, skipping")
+        return False
+
+    recipients = [a.strip() for a in config.EMAIL_TO.split(",") if a.strip()]
+    msg = EmailMessage()
+    msg["Subject"] = f"Air Picture — {date_str}"
+    msg["From"] = formataddr(("Air Picture", config.EMAIL_FROM))
+    msg["To"] = ", ".join(recipients)
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = make_msgid(domain=config.EMAIL_FROM.rsplit("@", 1)[-1])
+    msg.set_content(report_text)
+
+    context = ssl.create_default_context()
+    try:
+        if config.SMTP_PORT == 465:
+            server = smtplib.SMTP_SSL(config.SMTP_HOST, config.SMTP_PORT,
+                                      timeout=30, context=context)
+        else:
+            server = smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=30)
+            server.starttls(context=context)
+        with server:
+            server.login(config.SMTP_USER, config.SMTP_PASS)
+            server.send_message(msg, to_addrs=recipients)
+    except (smtplib.SMTPException, OSError) as e:
+        logger.error("Email failed: %s", e)
+        return False
+    return True
+
+
 def publish_site(_date_str: str) -> bool:
     """Rebuild the static site and publish it to Cloudflare Pages.
 
@@ -165,6 +210,8 @@ def deliver(report_text: str, date_str: str):
     logger.info("[deliver] Report archived: %s", file_path)
 
     channels = []
+    if email_configured():
+        channels.append(("email", send_email))
     if config.NTFY_TOPIC:
         channels.append(("ntfy", push_ntfy))
     if config.FB_PAGE_ID and config.FB_ACCESS_TOKEN:
@@ -183,3 +230,39 @@ def deliver(report_text: str, date_str: str):
             name = futures[future]
             ok = future.result()
             logger.info("[deliver] %s: %s", name, "OK" if ok else "FAILED")
+            _alert_channel(name, ok, file_path)
+
+
+def _alert_channel(name: str, ok: bool, file_path: str) -> None:
+    """Raise or clear a pipeline alert for one report channel.
+
+    Until this existed, a failing channel was only ever logged. ntfy went 401
+    and the Zapier hook went 404 in late October 2026, and the reports quietly
+    stopped arriving for two weeks while the log said FAILED every morning.
+
+    alerts._push always posts a local macOS notification before trying ntfy,
+    so this still gets through when ntfy is the broken channel. With one
+    report a day and ALERT_REPEAT_HOURS at 6, a persistent failure nags once
+    per report, not once per hour.
+
+    The site channel is skipped: build_and_push.sh already alerts as
+    "site deploy", and alerting here too would double every notification.
+    """
+    if name == "site publish":
+        return
+    # Imported here because alerts imports deliver for ntfy_post.
+    import alerts  # pylint: disable=import-outside-toplevel
+
+    component = f"report via {name}"
+    try:
+        if ok:
+            alerts.notify_recovery(component, "Daily reports are arriving again.")
+        else:
+            alerts.notify_failure(
+                component,
+                f"Today's report was saved to {file_path} but did not reach {name}. "
+                "See air_picture.log for the error.",
+            )
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        # Same rule as build_and_push.sh: a broken notifier must not break delivery.
+        logger.warning("Alert for %s failed: %s", name, e)

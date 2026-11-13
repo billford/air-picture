@@ -161,6 +161,26 @@ class TestDeliver(unittest.TestCase):
     # explicitly. It went unpatched while the site channel was a git no-op;
     # once publishing moved to Cloudflare Pages that made the test suite deploy
     # to production. Anything that leaves the machine gets patched here.
+    def setUp(self):
+        # deliver() now raises pipeline alerts; keep them off the desktop and
+        # out of the real .alert_state.json.
+        patcher = patch("deliver._alert_channel")
+        self.mock_alert = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @patch("deliver.save_to_file", return_value="/tmp/report.txt")
+    @patch.object(deliver.config, "NTFY_TOPIC", "topic")
+    @patch.object(deliver.config, "FB_PAGE_ID", "")
+    @patch.object(deliver.config, "FB_ACCESS_TOKEN", "")
+    @patch.object(deliver.config, "ZAPIER_WEBHOOK_URL", "https://hooks.zapier.com/test")
+    @patch.object(deliver.config, "PUBLISH_SITE", False)
+    @patch("deliver.push_ntfy", return_value=True)
+    @patch("deliver.post_zapier_webhook", return_value=False)
+    def test_alerts_with_each_channel_result(self, _mock_zapier, _mock_ntfy, _mock_save):
+        deliver.deliver("report", "2026-05-14")
+        calls = {c.args[0]: c.args[1] for c in self.mock_alert.call_args_list}
+        self.assertEqual(calls, {"ntfy": True, "Zapier webhook": False})
+
     @patch("deliver.save_to_file", return_value="/tmp/report.txt")
     @patch.object(deliver.config, "NTFY_TOPIC", "topic")
     @patch.object(deliver.config, "FB_PAGE_ID", "")
@@ -217,3 +237,65 @@ class TestPublishSite(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAlertChannel(unittest.TestCase):
+    @patch("alerts.notify_failure")
+    def test_failure_raises_alert(self, mock_fail):
+        deliver._alert_channel("ntfy", False, "/tmp/r.txt")
+        component, detail = mock_fail.call_args.args
+        self.assertEqual(component, "report via ntfy")
+        self.assertIn("/tmp/r.txt", detail)
+
+    @patch("alerts.notify_recovery")
+    def test_success_clears_alert(self, mock_recover):
+        deliver._alert_channel("Zapier webhook", True, "/tmp/r.txt")
+        self.assertEqual(mock_recover.call_args.args[0], "report via Zapier webhook")
+
+    @patch("alerts.notify_failure")
+    @patch("alerts.notify_recovery")
+    def test_site_publish_left_to_build_and_push(self, mock_recover, mock_fail):
+        deliver._alert_channel("site publish", False, "/tmp/r.txt")
+        mock_fail.assert_not_called()
+        mock_recover.assert_not_called()
+
+    @patch("alerts.notify_failure", side_effect=RuntimeError("boom"))
+    def test_alert_error_does_not_propagate(self, _mock_fail):
+        deliver._alert_channel("ntfy", False, "/tmp/r.txt")
+
+
+class TestSendEmail(unittest.TestCase):
+    def setUp(self):
+        for key, val in {
+            "EMAIL_TO": "a@example.com, b@example.com", "EMAIL_FROM": "air@example.org",
+            "SMTP_HOST": "smtp.example.org", "SMTP_PORT": 465,
+            "SMTP_USER": "api_token", "SMTP_PASS": "secret",
+        }.items():
+            p = patch.object(deliver.config, key, val)
+            p.start()
+            self.addCleanup(p.stop)
+
+    @patch.object(deliver.config, "SMTP_PASS", "")
+    def test_unconfigured_skips(self):
+        self.assertFalse(deliver.send_email("r", "2026-11-13"))
+
+    @patch("deliver.smtplib.SMTP_SSL")
+    def test_sends_report_over_implicit_tls(self, mock_ssl):
+        server = mock_ssl.return_value
+        self.assertTrue(deliver.send_email("FULL REPORT", "2026-11-13"))
+        server.login.assert_called_once_with("api_token", "secret")
+        msg = server.send_message.call_args.args[0]
+        self.assertEqual(msg["Subject"], "Air Picture — 2026-11-13")
+        self.assertIn("FULL REPORT", msg.get_content())
+        self.assertEqual(server.send_message.call_args.kwargs["to_addrs"],
+                         ["a@example.com", "b@example.com"])
+
+    @patch.object(deliver.config, "SMTP_PORT", 587)
+    @patch("deliver.smtplib.SMTP")
+    def test_other_ports_use_starttls(self, mock_smtp):
+        self.assertTrue(deliver.send_email("r", "2026-11-13"))
+        mock_smtp.return_value.starttls.assert_called_once()
+
+    @patch("deliver.smtplib.SMTP_SSL", side_effect=OSError("refused"))
+    def test_connection_error_returns_false(self, _mock_ssl):
+        self.assertFalse(deliver.send_email("r", "2026-11-13"))
