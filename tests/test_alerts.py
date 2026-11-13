@@ -14,9 +14,8 @@ class AlertTestCase(unittest.TestCase):
     """Gives each test a private state file so throttling can't leak between them."""
 
     def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self._tmp.cleanup)
-        state_path = str(Path(self._tmp.name) / "alert_state.json")
+        tmp = self.enterContext(tempfile.TemporaryDirectory())  # pylint: disable=consider-using-with
+        state_path = str(Path(tmp) / "alert_state.json")
 
         patcher = patch.object(alerts.config, "ALERT_STATE_FILE", state_path)
         patcher.start()
@@ -176,3 +175,25 @@ class TestMain(AlertTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestReportChannels(unittest.TestCase):
+    @patch("alerts.notify_recovery")
+    @patch("alerts.notify_failure")
+    def test_failure_alerts_and_success_recovers(self, mock_fail, mock_recover):
+        alerts.report_channels({"ntfy": False, "email": True}, "/tmp/r.txt")
+        component, detail = mock_fail.call_args.args
+        self.assertEqual(component, "report via ntfy")
+        self.assertIn("/tmp/r.txt", detail)
+        self.assertEqual(mock_recover.call_args.args[0], "report via email")
+
+    @patch("alerts.notify_recovery")
+    @patch("alerts.notify_failure")
+    def test_site_publish_left_to_build_and_push(self, mock_fail, mock_recover):
+        alerts.report_channels({"site publish": False}, "/tmp/r.txt")
+        mock_fail.assert_not_called()
+        mock_recover.assert_not_called()
+
+    @patch("alerts.notify_failure", side_effect=RuntimeError("boom"))
+    def test_alert_error_does_not_propagate(self, _mock_fail):
+        alerts.report_channels({"ntfy": False}, "/tmp/r.txt")

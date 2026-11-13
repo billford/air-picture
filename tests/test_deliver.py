@@ -161,13 +161,6 @@ class TestDeliver(unittest.TestCase):
     # explicitly. It went unpatched while the site channel was a git no-op;
     # once publishing moved to Cloudflare Pages that made the test suite deploy
     # to production. Anything that leaves the machine gets patched here.
-    def setUp(self):
-        # deliver() now raises pipeline alerts; keep them off the desktop and
-        # out of the real .alert_state.json.
-        patcher = patch("deliver._alert_channel")
-        self.mock_alert = patcher.start()
-        self.addCleanup(patcher.stop)
-
     @patch("deliver.save_to_file", return_value="/tmp/report.txt")
     @patch.object(deliver.config, "NTFY_TOPIC", "topic")
     @patch.object(deliver.config, "FB_PAGE_ID", "")
@@ -176,10 +169,10 @@ class TestDeliver(unittest.TestCase):
     @patch.object(deliver.config, "PUBLISH_SITE", False)
     @patch("deliver.push_ntfy", return_value=True)
     @patch("deliver.post_zapier_webhook", return_value=False)
-    def test_alerts_with_each_channel_result(self, _mock_zapier, _mock_ntfy, _mock_save):
-        deliver.deliver("report", "2026-05-14")
-        calls = {c.args[0]: c.args[1] for c in self.mock_alert.call_args_list}
-        self.assertEqual(calls, {"ntfy": True, "Zapier webhook": False})
+    def test_returns_each_channel_result(self, _mock_zapier, _mock_ntfy, _mock_save):
+        path, results = deliver.deliver("report", "2026-05-14")
+        self.assertEqual(path, "/tmp/report.txt")
+        self.assertEqual(results, {"ntfy": True, "Zapier webhook": False})
 
     @patch("deliver.save_to_file", return_value="/tmp/report.txt")
     @patch.object(deliver.config, "NTFY_TOPIC", "topic")
@@ -237,31 +230,6 @@ class TestPublishSite(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class TestAlertChannel(unittest.TestCase):
-    @patch("alerts.notify_failure")
-    def test_failure_raises_alert(self, mock_fail):
-        deliver._alert_channel("ntfy", False, "/tmp/r.txt")
-        component, detail = mock_fail.call_args.args
-        self.assertEqual(component, "report via ntfy")
-        self.assertIn("/tmp/r.txt", detail)
-
-    @patch("alerts.notify_recovery")
-    def test_success_clears_alert(self, mock_recover):
-        deliver._alert_channel("Zapier webhook", True, "/tmp/r.txt")
-        self.assertEqual(mock_recover.call_args.args[0], "report via Zapier webhook")
-
-    @patch("alerts.notify_failure")
-    @patch("alerts.notify_recovery")
-    def test_site_publish_left_to_build_and_push(self, mock_recover, mock_fail):
-        deliver._alert_channel("site publish", False, "/tmp/r.txt")
-        mock_fail.assert_not_called()
-        mock_recover.assert_not_called()
-
-    @patch("alerts.notify_failure", side_effect=RuntimeError("boom"))
-    def test_alert_error_does_not_propagate(self, _mock_fail):
-        deliver._alert_channel("ntfy", False, "/tmp/r.txt")
 
 
 class TestSendEmail(unittest.TestCase):

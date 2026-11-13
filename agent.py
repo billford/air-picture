@@ -265,7 +265,8 @@ def run_report(date_str=None):
     print(text)
     print("=" * 70 + "\n")
 
-    deliver.deliver(text, date_str)
+    file_path, results = deliver.deliver(text, date_str)
+    alerts.report_channels(results, file_path)
 
 
 # ---------------------------------------------------------------------------

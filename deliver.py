@@ -204,8 +204,13 @@ def publish_site(_date_str: str) -> bool:
     return True
 
 
-def deliver(report_text: str, date_str: str):
-    """Run all configured delivery channels; network channels run concurrently."""
+def deliver(report_text: str, date_str: str) -> tuple[str, dict[str, bool]]:
+    """Run all configured delivery channels; network channels run concurrently.
+
+    Returns the archive path and {channel name: succeeded}, so the caller can
+    raise alerts. Alerting lives in agent.py, not here, because alerts.py
+    imports this module for ntfy_post.
+    """
     file_path = save_to_file(report_text, date_str)
     logger.info("[deliver] Report archived: %s", file_path)
 
@@ -221,8 +226,9 @@ def deliver(report_text: str, date_str: str):
     if config.PUBLISH_SITE:
         channels.append(("site publish", lambda _rt, d: publish_site(d)))
 
+    results: dict[str, bool] = {}
     if not channels:
-        return
+        return file_path, results
 
     with ThreadPoolExecutor(max_workers=len(channels)) as pool:
         futures = {pool.submit(fn, report_text, date_str): name for name, fn in channels}
@@ -230,39 +236,5 @@ def deliver(report_text: str, date_str: str):
             name = futures[future]
             ok = future.result()
             logger.info("[deliver] %s: %s", name, "OK" if ok else "FAILED")
-            _alert_channel(name, ok, file_path)
-
-
-def _alert_channel(name: str, ok: bool, file_path: str) -> None:
-    """Raise or clear a pipeline alert for one report channel.
-
-    Until this existed, a failing channel was only ever logged. ntfy went 401
-    and the Zapier hook went 404 in late October 2026, and the reports quietly
-    stopped arriving for two weeks while the log said FAILED every morning.
-
-    alerts._push always posts a local macOS notification before trying ntfy,
-    so this still gets through when ntfy is the broken channel. With one
-    report a day and ALERT_REPEAT_HOURS at 6, a persistent failure nags once
-    per report, not once per hour.
-
-    The site channel is skipped: build_and_push.sh already alerts as
-    "site deploy", and alerting here too would double every notification.
-    """
-    if name == "site publish":
-        return
-    # Imported here because alerts imports deliver for ntfy_post.
-    import alerts  # pylint: disable=import-outside-toplevel
-
-    component = f"report via {name}"
-    try:
-        if ok:
-            alerts.notify_recovery(component, "Daily reports are arriving again.")
-        else:
-            alerts.notify_failure(
-                component,
-                f"Today's report was saved to {file_path} but did not reach {name}. "
-                "See air_picture.log for the error.",
-            )
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        # Same rule as build_and_push.sh: a broken notifier must not break delivery.
-        logger.warning("Alert for %s failed: %s", name, e)
+            results[name] = ok
+    return file_path, results

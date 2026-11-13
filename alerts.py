@@ -166,6 +166,38 @@ def notify_recovery(component: str, detail: str = "") -> bool:
     )
 
 
+def report_channels(results: dict, file_path: str) -> None:
+    """Raise or clear an alert for each report delivery channel.
+
+    Until this existed, a failing channel was only ever logged. ntfy went 401
+    and the Zapier hook went 404 in late October 2026, and the reports quietly
+    stopped arriving for two weeks while the log said FAILED every morning.
+
+    _push always posts a local macOS notification before trying ntfy, so this
+    still gets through when ntfy is the broken channel. With one report a day
+    and ALERT_REPEAT_HOURS at 6, a persistent failure nags once per report.
+
+    The site channel is skipped: build_and_push.sh already alerts as
+    "site deploy", and alerting here too would double every notification.
+    """
+    for name, ok in results.items():
+        if name == "site publish":
+            continue
+        component = f"report via {name}"
+        try:
+            if ok:
+                notify_recovery(component, "Daily reports are arriving again.")
+            else:
+                notify_failure(
+                    component,
+                    f"Today's report was saved to {file_path} but did not reach {name}. "
+                    "See air_picture.log for the error.",
+                )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # A broken notifier must never break delivery.
+            logger.warning("Alert for %s failed: %s", name, e)
+
+
 def main(argv=None) -> int:
     """Shell entry point, so build_and_push.sh can alert without embedding Python.
 
