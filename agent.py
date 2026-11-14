@@ -28,6 +28,7 @@ import config
 sys.path.insert(0, config.SDR_MCP_PATH)
 
 import alerts
+import context
 import db
 import detect
 import logs
@@ -126,14 +127,43 @@ def _check_traffic_baseline(baseline):
         print(f"[scan] MISSING REGULAR: {len(missing)} absent — {shown}")
 
 
-def _opensky_fallback(reason: str) -> list:
-    """Fetch from OpenSky, reporting how we got here. Returns [] if it too is empty."""
-    aircraft_list = opensky.fetch_aircraft()
-    if not aircraft_list:
-        print(f"[scan] No aircraft detected this cycle ({reason} + OpenSky empty).")
-        return []
-    print(f"[scan] OpenSky fallback: {len(aircraft_list)} aircraft.")
-    return aircraft_list
+# How often to read the receiver's aircraft list during a scan. It only lists
+# aircraft heard in the last 60 seconds (sdr_mcp's STALE_TIMEOUT_SECONDS), so
+# anything under that catches every aircraft heard at any point in the scan.
+SDR_POLL_SECONDS = 15
+
+
+def _collect_sdr(monitor, duration_seconds: float, sleep=time.sleep, clock=time.monotonic) -> dict:
+    """Every aircraft the receiver heard during the scan, keyed by ICAO hex.
+
+    Reading the list once at the end, as this used to, kept only the last
+    minute of a five-minute scan: 0-4 aircraft from scans that heard far more.
+    Later reads win, so each aircraft keeps its most recent position.
+    """
+    heard = {}
+    deadline = clock() + duration_seconds
+    while True:
+        remaining = deadline - clock()
+        if remaining <= 0:
+            break
+        sleep(min(SDR_POLL_SECONDS, remaining))
+        for ac in monitor.get_aircraft():
+            heard[ac.icao_hex.upper()] = ac
+    return heard
+
+
+def _merge_sources(sdr: dict, opensky_list: list) -> list:
+    """Union of receiver and OpenSky aircraft. The receiver wins on overlap.
+
+    OpenSky used to be a fallback, fetched only when the receiver returned
+    nothing. With a weak receiver that inverted the data: a scan that heard
+    two aircraft skipped OpenSky's 30-40, so the better the receiver behaved,
+    the emptier the sky looked. Nearly all history was collected via OpenSky,
+    so taking it every scan also keeps today comparable with the baseline.
+    """
+    merged = {ac.icao_hex.upper(): ac for ac in opensky_list}
+    merged.update(sdr)
+    return list(merged.values())
 
 
 def run_scan():
@@ -152,16 +182,19 @@ def run_scan():
     logger.info("Starting scan [%s] for %s min", session_id, config.SCAN_DURATION_MINUTES)
     print(f"[scan] Session {session_id} — scanning for {config.SCAN_DURATION_MINUTES} min…")
 
+    sdr = {}
     try:
         from sdr_mcp.adsb import get_adsb_monitor  # pylint: disable=import-outside-toplevel
 
         monitor = get_adsb_monitor()
         monitor.start()
-        time.sleep(duration_seconds)
-        aircraft_list = monitor.get_aircraft()
-        stats = monitor.stop()
-
-        logger.info("Scan complete: %s aircraft, %s", len(aircraft_list), stats)
+        try:
+            sdr = _collect_sdr(monitor, duration_seconds)
+        finally:
+            stats = monitor.stop()
+        # stats["total_aircraft"] over-counts: sdr_mcp re-counts an aircraft
+        # every second it sits in dump1090's output past its own 60s expiry.
+        logger.info("Scan complete: %s aircraft heard (receiver stats %s)", len(sdr), stats)
 
     except ImportError as e:
         # Not a hardware fault: sdr_mcp isn't importable at all, so no scan will
@@ -170,28 +203,30 @@ def run_scan():
         # generic SDR error is what let a stale path hide behind the fallback
         # for weeks. Name the path we actually tried.
         logger.error(
-            "sdr_mcp not importable from %s (%s) — SDR disabled, falling back to "
-            "OpenSky. Check config.SDR_MCP_PATH or set $SDR_MCP_PATH.",
+            "sdr_mcp not importable from %s (%s) — SDR disabled, OpenSky only. "
+            "Check config.SDR_MCP_PATH or set $SDR_MCP_PATH.",
             config.SDR_MCP_PATH, e,
         )
         print(f"[scan] SDR UNAVAILABLE: sdr_mcp not importable from {config.SDR_MCP_PATH}")
-        print("[scan] Falling back to OpenSky Network (reduced coverage)…")
-        release_lock()
-        aircraft_list = _opensky_fallback("no SDR")
 
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error("Scan failed: %s — falling back to OpenSky", e)
-        print(f"[scan] SDR error ({e}) — trying OpenSky Network fallback…")
-        release_lock()
-        aircraft_list = _opensky_fallback("SDR error")
-    else:
+        logger.error("Scan failed: %s — OpenSky only this cycle", e)
+        print(f"[scan] SDR error ({e}) — OpenSky only this cycle")
+    finally:
         release_lock()
 
-    if not aircraft_list:
-        print("[scan] No aircraft from SDR — trying OpenSky Network fallback…")
-        aircraft_list = _opensky_fallback("SDR")
+    osky = opensky.fetch_aircraft()
+    aircraft_list = _merge_sources(sdr, osky)
+    logger.info("Sources: receiver %s, OpenSky %s, combined %s",
+                len(sdr), len(osky), len(aircraft_list))
+    print(f"[scan] receiver {len(sdr)}, OpenSky {len(osky)}, combined {len(aircraft_list)}")
+
+    # FAA airspace status and national traffic, for the report. Before the
+    # early return: a sky with nothing in it is exactly when this matters.
+    context.collect()
 
     if not aircraft_list:
+        print("[scan] No aircraft detected this cycle.")
         return
 
     # Log to database
@@ -205,8 +240,8 @@ def run_scan():
         for a in anomalies:
             print(f"       [{a['type']}] {a['icao_hex']} {a['callsign'] or ''}")
 
-    # Check traffic baseline deviation (only if we have history)
-    baseline = db.get_rolling_baseline()
+    # Check traffic against the same 24 hours on previous days
+    baseline = db.get_window_baseline(datetime.now(timezone.utc), config.REPORT_DAYS)
     _check_traffic_baseline(baseline)
 
     # Rebuild and publish the site immediately when there's new data to

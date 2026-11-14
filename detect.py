@@ -115,10 +115,16 @@ def run_anomaly_detection(aircraft_list: list) -> List[dict]:
 
 
 def check_traffic_deviation(baseline: dict) -> List[dict]:
-    """Compare today's traffic count to rolling baseline. Returns anomaly list."""
+    """Compare the last 24 hours' traffic to the same 24 hours on previous days.
+
+    `baseline` comes from db.get_window_baseline. This used to count the UTC
+    calendar day so far against full-day averages, so every scan before
+    midnight UTC read as quiet: 207 aircraft "87% below average" at 14:00 UTC
+    was a partial day, not an event.
+    """
     anomalies = []
-    today_flights = db.get_today_flights()
-    today_count = len(today_flights)
+    now = datetime.now(timezone.utc)
+    today_count = db.count_window_flights(now - timedelta(hours=24), now)
     avg = baseline.get("avg_daily", 0)
 
     if avg == 0:
@@ -130,8 +136,8 @@ def check_traffic_deviation(baseline: dict) -> List[dict]:
         direction = "above" if deviation > 0 else "below"
         pct = abs(deviation) * 100
         desc = (
-            f"Today's traffic ({today_count} aircraft) is {pct:.0f}% {direction} "
-            f"the {baseline.get('days_sampled', 7)}-day average of {avg:.0f}."
+            f"Last 24 hours' traffic ({today_count} aircraft) is {pct:.0f}% {direction} "
+            f"the same 24 hours' {baseline.get('days_sampled', 7)}-day average of {avg:.0f}."
         )
         db.log_anomaly("N/A", None, "traffic_deviation", desc)
         anomalies.append({"icao_hex": "N/A", "callsign": None, "type": "traffic_deviation", "description": desc})

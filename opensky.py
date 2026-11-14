@@ -103,3 +103,22 @@ def fetch_aircraft(radius_nm: float = _DEFAULT_RADIUS_NM) -> List[Aircraft]:
 
     logger.info("OpenSky: %d airborne contacts within %.0f nm", len(aircraft), radius_nm)
     return aircraft
+
+
+def count_airborne(bbox: tuple) -> Optional[int]:
+    """Number of airborne aircraft in bbox (lat_min, lon_min, lat_max, lon_max).
+
+    None if the query failed, which callers must not confuse with zero: zero
+    is what a national grounding looks like.
+    """
+    url = (f"{_OPENSKY_URL}?lamin={bbox[0]:.4f}&lomin={bbox[1]:.4f}"
+           f"&lamax={bbox[2]:.4f}&lomax={bbox[3]:.4f}")
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "air-picture/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        logger.error("OpenSky national fetch failed: %s", exc)
+        return None
+    states = data.get("states") or []
+    return sum(1 for s in states if not s[8])

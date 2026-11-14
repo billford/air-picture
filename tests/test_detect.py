@@ -152,7 +152,7 @@ class TestRunAnomalyDetection(unittest.TestCase):
 
 
 class TestCheckTrafficDeviation(unittest.TestCase):
-    @patch("detect.db.get_today_flights", return_value=[{}] * 100)
+    @patch("detect.db.count_window_flights", return_value=100)
     @patch("detect.db.log_anomaly")
     def test_high_deviation_flagged(self, _mock_log, _mock_flights):
         baseline = {"avg_daily": 50, "days_sampled": 7}
@@ -160,14 +160,14 @@ class TestCheckTrafficDeviation(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["type"], "traffic_deviation")
 
-    @patch("detect.db.get_today_flights", return_value=[{}] * 52)
+    @patch("detect.db.count_window_flights", return_value=52)
     @patch("detect.db.log_anomaly")
     def test_within_threshold_no_flag(self, _mock_log, _mock_flights):
         baseline = {"avg_daily": 50, "days_sampled": 7}
         result = detect.check_traffic_deviation(baseline)
         self.assertEqual(result, [])
 
-    @patch("detect.db.get_today_flights", return_value=[])
+    @patch("detect.db.count_window_flights", return_value=0)
     def test_no_baseline_returns_empty(self, _mock_flights):
         result = detect.check_traffic_deviation({"avg_daily": 0, "days_sampled": 0})
         self.assertEqual(result, [])

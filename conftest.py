@@ -19,7 +19,7 @@ def _refuse(*_args, **_kwargs):
 
 
 @pytest.fixture(autouse=True)
-def _no_real_delivery(monkeypatch):
+def _no_real_delivery(monkeypatch, tmp_path):
     """Stop the suite from delivering anything for real.
 
     config reads the real .env, so once email was configured, every deliver()
@@ -27,6 +27,9 @@ def _no_real_delivery(monkeypatch):
     make real SMTP/HTTP connections raise. Tests that need them patch over
     these with their own mocks, which take precedence.
     """
+    # Same for the database: a query a test forgot to mock read the real
+    # air_picture.db. Tests that want a database set their own DB_PATH.
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "test.db"))
     for key in ("EMAIL_TO", "EMAIL_FROM", "SMTP_HOST", "SMTP_USER", "SMTP_PASS"):
         monkeypatch.setattr(config, key, "")
     monkeypatch.setattr(smtplib, "SMTP", _refuse)

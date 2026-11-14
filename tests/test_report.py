@@ -132,7 +132,7 @@ class TestFormatBaseline(unittest.TestCase):
 
     def test_includes_today_count(self):
         result = report._format_baseline({"avg_daily": 50, "days_sampled": 7}, 60)
-        self.assertIn("Today: 60 aircraft", result)
+        self.assertIn("This period: 60 aircraft", result)
 
 
 if __name__ == "__main__":
