@@ -1,0 +1,35 @@
+name: Deploy GitHub Pages redirect
+
+# The live site is on Cloudflare Pages (build_and_push.sh). GitHub Pages only
+# serves pages-redirect/, which forwards every old github.io URL to the same
+# path on air-picture.pages.dev. It holds no data, so this runs by hand only:
+# once to install it, and again only if the redirect itself changes.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Serve the redirect for every path
+        run: cp pages-redirect/index.html pages-redirect/404.html && touch pages-redirect/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages-redirect
+      - id: deployment
+        uses: actions/deploy-pages@v4
