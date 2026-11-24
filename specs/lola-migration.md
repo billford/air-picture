@@ -1,6 +1,6 @@
 # Moving air-picture from the laptop to lola
 
-Status: lola prepared 2026-11-24; waiting on a Cloudflare token, then cutover.
+Status: cut over to lola 2026-11-24 at 17:53 EST. Waiting on the dongle move.
 Surveyed both machines 2026-11-24.
 
 ## Progress
@@ -13,8 +13,12 @@ Surveyed both machines 2026-11-24.
 - [x] `build_and_push.sh` reads a Cloudflare token from `.env`
 - [x] `.env` copied to lola (mode 600)
 - [x] test on a snapshot: 1-minute scan (receiver 0, OpenSky 55, deploy stubbed out) and site build
-- [ ] Cloudflare Pages token in `.env` (you)
-- [ ] cutover: stop laptop jobs, fresh database copy, `launchd/install.sh` on lola
+- [x] Cloudflare Pages token (Account > Cloudflare Pages > Edit) and account ID in `.env`, verified
+- [x] cutover 17:53: laptop jobs stopped and their plists moved to
+  `~/air-picture-laptop-launchd-backup/` (so a login can't reload them);
+  database copied with `.backup` (286,080 flights, integrity ok) with
+  reports, `.env` and alert state; deploy from lola succeeded;
+  `launchd/install.sh` loaded all five jobs on lola
 - [ ] move the dongle and whip (you); scans use OpenSky alone until then
 
 ## Why
@@ -148,7 +152,9 @@ traffic.
 
 ### Rollback
 
-Bootstrap the laptop's plists again and move the dongle back. The laptop
+On lola, `launchd/install.sh --remove`. On the laptop, move the plists back
+from `~/air-picture-laptop-launchd-backup/` and bootstrap them, copy lola's
+database back, and move the dongle back. The laptop
 keeps its database until cleanup, so the only loss is the scans lola ran.
 
 ## Open questions
