@@ -1,0 +1,131 @@
+# Moving air-picture from the laptop to lola
+
+Status: plan, not started. Surveyed both machines 2026-11-24.
+
+## Why
+
+The laptop needs to travel again. air-picture needs a machine that stays
+put, stays awake, and keeps the dongle on the same antenna every day.
+lola, the Mac Studio at the upstairs window, already does that for the
+HackRF and drone-watch work.
+
+This repo is public, so the plan names machines but not accounts,
+addresses or credentials.
+
+## What lola has
+
+| | lola | Needed |
+|---|---|---|
+| Power | never sleeps (`sleep 0`), restarts after power loss, up 36 days | yes |
+| Disk | 240 GB free | ~550 MB (repo, venv, 160 MB database) |
+| dump1090-fa | 11.0, Homebrew (laptop has 10.2) | yes |
+| rtl-sdr tools | installed | yes |
+| Python | Homebrew 3.13 | yes |
+| mcp-sdr | cloned at `~/mcp-sdr`, 2 commits behind origin | `git pull` |
+| node / npx | **missing** | wrangler deploys the site |
+| Network | ntfy, FAA, OpenSky, Anthropic, Cloudflare and Gmail SMTP all reachable | yes |
+| **RTL-SDR dongle** | **none** | **yes** |
+
+## The receiver is the real question
+
+lola has **no RTL-SDR**. `rtl_test` finds nothing. Its only radio on USB is
+the HackRF One, and that won't do for ADS-B here:
+
+- dump1090-fa, which sdr_mcp drives, supports RTL-SDR, not HackRF.
+- AIS-catcher uses the HackRF, and so does the drone-watch sweep every day
+  from 13:25 to 14:35. Contending for it would break both of them.
+
+So the dongle moves with the job: the **Nooelec NESDR SMArt v5** now on
+the laptop goes to lola.
+
+The antenna needs confirming. ADS-B is 1090 MHz. If lola's antenna is the
+HackRF's (wideband, or tuned for AIS at 162 MHz), it isn't the one for
+this, even with the same connector. The laptop's receiver is already weak:
+about 3 unique aircraft in a 5-minute scan, where dozens would be normal.
+The move is the moment to fix that, with a 1090 MHz antenna at the
+upstairs window and a short cable.
+
+## What has to change
+
+1. **Paths.** lola uses a different account, so its home directory is
+   different. All five launchd plists hard-code the laptop's home and must
+   be rewritten. The code's own paths are relative (`DB_PATH` sits next to
+   `config.py`) or use `~`, so they're fine.
+2. **mcp-sdr location.** `config._SDR_MCP_CANDIDATES` checks `~/Projects`
+   and `~/Documents`. lola's checkout is in `~/mcp-sdr`. Either set
+   `SDR_MCP_PATH` in lola's `.env`, or add `~/mcp-sdr` to the candidate
+   list. Adding it is the safer choice: a wrong path costs the SDR quietly
+   (see the comment in `config.py`).
+3. **Site deploys.** lola needs node, and wrangler needs authorizing
+   there, with either `wrangler login` (interactive, you'd run it) or a
+   `CLOUDFLARE_API_TOKEN` limited to Pages for this one project.
+4. **Secrets.** Copy `.env` across with `scp`. It stays uncommitted. It
+   holds the Anthropic key, ntfy, the Gmail app password and the Facebook
+   token.
+5. **Do not copy the xhci LaunchDaemon.** `local.sdr.unload-xhci-driver`
+   unloads `AppleUSBXHCI` at boot. On lola that would take the USB
+   controller away from the external drive, the HackRF and the VM's
+   radios. It's loaded on the laptop but not running, and nothing current
+   seems to need it.
+6. **Mac notifications.** The delivery-failure alert in `alerts.py` would
+   show on lola's screen, which nobody watches. The ntfy and email alerts
+   are unaffected.
+7. **Claude Desktop.** The `sdr-adsb-local` MCP entry on the laptop
+   expects the dongle on the laptop. Once the dongle moves, point that
+   entry at lola over SSH, the way `sdr-hackrf-lola` already works.
+
+## Steps
+
+### Prepare lola (no downtime; the laptop keeps running)
+
+1. `brew install node`
+2. `cd ~/mcp-sdr && git pull`, then rebuild its venv if its dependencies
+   changed.
+3. Clone air-picture to `~/air-picture`, outside any synced folder (see
+   mcp-sdr's `MULTI_MAC_SETUP.md` on why a synced `.venv` breaks).
+4. Build its venv with Homebrew Python 3.13: `pip install -r
+   requirements.txt`, then `pip install -e ~/mcp-sdr`.
+5. Commit the `~/mcp-sdr` candidate (change 2) and pull it on lola.
+6. Copy `.env`. Authorize wrangler, then run `build_and_push.sh` by hand
+   against a copy of the database to prove deploys work from lola.
+7. Generate the five plists with lola's paths. Don't load them yet.
+8. Run the test suite on lola.
+
+### Cut over (about 15 minutes, best just after the 10:00 report)
+
+1. Laptop: `launchctl bootout` all five `local.air-picture.*` jobs. Wait
+   for any scan in progress to finish. The scan lock shows it.
+2. Laptop: take a consistent copy of the database:
+   `sqlite3 air_picture.db ".backup /tmp/ap.db"`. A plain copy can miss
+   the WAL.
+3. Copy `ap.db`, `reports/` and `.alert_state.json` to lola.
+4. Move the dongle and antenna. On lola, `rtl_test -t` should list the
+   NESDR.
+5. lola: `agent.py --scan` by hand. The log should show `receiver N`,
+   with N > 0, alongside OpenSky.
+6. lola: `launchctl bootstrap` the five plists.
+7. Next hour: confirm the site deployed. Next 10:00: confirm the email
+   and ntfy arrive.
+
+The OpenSky fallback means any scan that runs mid-move still records
+traffic.
+
+### Clean up (a week later)
+
+- Laptop: remove the plists and the xhci daemon. Archive or delete the
+  laptop copy of the database once lola's has a week of new data on top.
+- Update the README's install section and the `requirements.txt`
+  comment, which still name `~/Projects/mcp-sdr`.
+
+### Rollback
+
+Bootstrap the laptop's plists again and move the dongle back. The laptop
+keeps its database until cleanup, so the only loss is the scans lola ran.
+
+## Open questions
+
+1. What antenna is on lola, and is it a 1090 MHz one? If it's on the
+   HackRF, do you want a second, dedicated 1090 antenna for the dongle?
+2. wrangler on lola: interactive login or a scoped API token?
+3. Should the laptop keep anything? It could take the dongle on trips,
+   but a second receiver can't both run scheduled scans and travel.
