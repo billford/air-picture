@@ -38,12 +38,21 @@ the HackRF One, and that won't do for ADS-B here:
 So the dongle moves with the job: the **Nooelec NESDR SMArt v5** now on
 the laptop goes to lola.
 
-The antenna needs confirming. ADS-B is 1090 MHz. If lola's antenna is the
-HackRF's (wideband, or tuned for AIS at 162 MHz), it isn't the one for
-this, even with the same connector. The laptop's receiver is already weak:
-about 3 unique aircraft in a 5-minute scan, where dozens would be normal.
-The move is the moment to fix that, with a 1090 MHz antenna at the
-upstairs window and a short cable.
+**Decided 2026-11-24: the laptop's antenna moves with the dongle.** The
+antenna already on lola belongs to the HackRF and stays with it.
+
+The laptop's receiver is weak: about 3 unique aircraft in a 5-minute scan,
+where dozens would be normal. The antenna is the likeliest cause, so set
+it up properly when it moves:
+
+- If it's the telescoping dipole from the Nooelec kit, pull each arm out
+  to about 6.9 cm (a quarter wavelength at 1090 MHz).
+- Mount it vertically, because ADS-B is vertically polarized, as high and
+  as close to the window glass as you can, on a short cable.
+
+The first scan by hand on lola (cutover step 5) shows whether this worked.
+If it still hears only a handful of aircraft, the next step is a dedicated
+1090 MHz antenna.
 
 ## What has to change
 
@@ -124,8 +133,8 @@ keeps its database until cleanup, so the only loss is the scans lola ran.
 
 ## Open questions
 
-1. What antenna is on lola, and is it a 1090 MHz one? If it's on the
-   HackRF, do you want a second, dedicated 1090 antenna for the dongle?
+1. ~~What antenna?~~ Settled: the laptop's antenna moves to lola with the
+   dongle (see "The receiver is the real question").
 2. wrangler on lola: interactive login or a scoped API token?
-3. Should the laptop keep anything? It could take the dongle on trips,
-   but a second receiver can't both run scheduled scans and travel.
+3. ~~Should the laptop keep anything?~~ Settled: no. The laptop gives up
+   both the dongle and the antenna.
