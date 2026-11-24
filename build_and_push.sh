@@ -49,6 +49,17 @@ trap on_exit EXIT
 
 cd "$REPO"
 
+# wrangler auth. On lola, a token scoped to Pages for this one project lives in
+# .env; nobody is at lola's screen to run `wrangler login`, and sharing the
+# laptop's OAuth login would break whichever machine refreshed it second.
+# Where neither is set, wrangler falls back to its own login, as before. Only
+# these two keys are read: sourcing .env would export every secret in it into
+# npx's environment.
+for key in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+    val="$(grep -E "^${key}=" "$REPO/.env" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d "\"'")" || true
+    if [ -n "$val" ]; then export "$key=$val"; fi
+done
+
 # Bound the log before appending to it. launchd holds this file's descriptor, so
 # the trim is in place rather than a rename - see logs.py.
 "$REPO/.venv/bin/python" -c "import logs; logs.trim_in_place()" || true

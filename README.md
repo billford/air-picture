@@ -15,10 +15,11 @@ intelligence-style briefing via Claude.
 ```bash
 cd ~/air-picture
 
-# 1. Create venv and install deps
+# 1. Create venv and install deps (mcp-sdr is a separate checkout; config
+#    looks in ~/Projects/mcp-sdr, ~/mcp-sdr, then ~/Documents/mcp-sdr)
 python3 -m venv .venv
-.venv/bin/pip install anthropic
-.venv/bin/pip install -e ~/Documents/mcp-sdr
+.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -e ~/mcp-sdr
 
 # 2. Configure credentials
 cp .env.example .env
@@ -39,7 +40,8 @@ cp .env.example .env
 
 ## Scheduling (macOS launchd)
 
-Four LaunchAgent plists live in `~/Library/LaunchAgents/`:
+Five LaunchAgent plists live in `launchd/`, with the repo path written as
+`__REPO__`:
 
 | Plist | Schedule |
 |-------|----------|
@@ -47,14 +49,19 @@ Four LaunchAgent plists live in `~/Library/LaunchAgents/`:
 | `local.air-picture.scan-morning.plist` | Every 15 min, 7–9 AM |
 | `local.air-picture.scan-evening.plist` | Every 15 min, 4–7 PM |
 | `local.air-picture.report-daily.plist` | Daily at 10 AM |
+| `local.air-picture.build-site-hourly.plist` | Hourly site deploy |
 
-Load all agents after initial setup (or after a reboot if they drop):
+Install and load them for this checkout (re-run after editing; `--remove`
+unloads and deletes them):
 
 ```bash
-for plist in ~/Library/LaunchAgents/local.air-picture.*.plist; do
-    launchctl bootstrap gui/$(id -u) "$plist"
-done
+launchd/install.sh
 ```
+
+The site deploy needs wrangler authorized: either `wrangler login`, or
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in `.env` (a token with
+Cloudflare Pages: Edit only). It runs on lola, which has no one at its screen
+to log in, so lola uses the token.
 
 Verify they are running:
 

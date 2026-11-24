@@ -1,5 +1,5 @@
 anthropic>=0.40.0
-# sdr-mcp is installed from the mcp-sdr checkout, currently ~/Projects/mcp-sdr.
-# Install with: pip install -e ~/Projects/mcp-sdr
-# agent.py locates it via config.SDR_MCP_PATH, which checks ~/Projects then
-# ~/Documents and honours $SDR_MCP_PATH - so a moved checkout needs no code edit.
+# sdr-mcp is installed from the mcp-sdr checkout: ~/mcp-sdr on lola,
+# ~/Projects/mcp-sdr on the laptop. Install with: pip install -e <checkout>
+# agent.py locates it via config.SDR_MCP_PATH, which checks ~/Projects/mcp-sdr,
+# ~/mcp-sdr, then ~/Documents/mcp-sdr and honours $SDR_MCP_PATH.

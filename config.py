@@ -117,7 +117,10 @@ DB_PATH = str(Path(__file__).parent / "air_picture.db")
 # Resolve against the places it actually lives, newest layout first, and let
 # the environment override. SDR_MCP_PATH stays a plain string so callers can
 # keep doing sys.path.insert() with it.
-_SDR_MCP_CANDIDATES = ("~/Projects/mcp-sdr", "~/Documents/mcp-sdr")
+#
+# ~/mcp-sdr is where lola keeps its clone: outside any synced folder, per
+# mcp-sdr's MULTI_MAC_SETUP.md.
+_SDR_MCP_CANDIDATES = ("~/Projects/mcp-sdr", "~/mcp-sdr", "~/Documents/mcp-sdr")
 
 def _resolve_sdr_mcp_path() -> str:
     """First candidate that actually contains the sdr_mcp package."""

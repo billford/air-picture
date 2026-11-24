@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>local.air-picture.scan-30min</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__REPO__/.venv/bin/python</string>
+        <string>__REPO__/agent.py</string>
+        <string>--scan</string>
+    </array>
+    <key>StandardOutPath</key>
+    <string>__REPO__/air_picture.log</string>
+    <key>StandardErrorPath</key>
+    <string>__REPO__/air_picture.log</string>
+    <key>StartCalendarInterval</key>
+    <array>
+        <!-- Off-peak hours only: 0-6, 10-15, 20-23 — avoids overlap with peak 15-min plists -->
+        <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>30</integer></dict>
+    </array>
+</dict>
+</plist>
