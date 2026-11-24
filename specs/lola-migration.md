@@ -45,7 +45,9 @@ The laptop's receiver is weak: about 3 unique aircraft in a 5-minute scan,
 where dozens would be normal. The antenna is the likeliest cause, so set
 it up properly when it moves:
 
-- If it's the telescoping dipole from the Nooelec kit, pull each arm out
+- It's a whip on the Nooelec. Kit whips are usually general-purpose, not
+  tuned for 1090 MHz, which may explain the weak reception.
+- If it's a telescoping one, pull each arm out
   to about 6.9 cm (a quarter wavelength at 1090 MHz).
 - Mount it vertically, because ADS-B is vertically polarized, as high and
   as close to the window glass as you can, on a short cable.
@@ -81,7 +83,10 @@ If it still hears only a handful of aircraft, the next step is a dedicated
    are unaffected.
 7. **Claude Desktop.** The `sdr-adsb-local` MCP entry on the laptop
    expects the dongle on the laptop. Once the dongle moves, point that
-   entry at lola over SSH, the way `sdr-hackrf-lola` already works.
+   entry at lola over SSH, the way `sdr-hackrf-lola` already works. The
+   dongle's other SDR use (tuning and scanning by hand) goes through that
+   entry. A scheduled scan holds the dongle for 5 minutes in every 30, so
+   work by hand during a scan can collide with it.
 
 ## Steps
 
