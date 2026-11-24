@@ -1,6 +1,21 @@
 # Moving air-picture from the laptop to lola
 
-Status: plan, not started. Surveyed both machines 2026-11-24.
+Status: lola prepared 2026-11-24; waiting on a Cloudflare token, then cutover.
+Surveyed both machines 2026-11-24.
+
+## Progress
+
+- [x] node 26 on lola; wrangler 4.168 runs
+- [x] lola's mcp-sdr pulled to current
+- [x] air-picture cloned to `~/air-picture` on lola, venv built with Python 3.13, 179 tests pass
+- [x] `~/mcp-sdr` added to the mcp-sdr search path (lola resolves it)
+- [x] the five jobs templated in `launchd/` with `install.sh` (not loaded on lola yet)
+- [x] `build_and_push.sh` reads a Cloudflare token from `.env`
+- [x] `.env` copied to lola (mode 600)
+- [x] test on a snapshot: 1-minute scan (receiver 0, OpenSky 55, deploy stubbed out) and site build
+- [ ] Cloudflare Pages token in `.env` (you)
+- [ ] cutover: stop laptop jobs, fresh database copy, `launchd/install.sh` on lola
+- [ ] move the dongle and whip (you); scans use OpenSky alone until then
 
 ## Why
 
