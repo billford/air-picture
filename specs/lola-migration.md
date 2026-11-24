@@ -19,7 +19,30 @@ Surveyed both machines 2026-11-24.
   database copied with `.backup` (286,080 flights, integrity ok) with
   reports, `.env` and alert state; deploy from lola succeeded;
   `launchd/install.sh` loaded all five jobs on lola
-- [ ] move the dongle and whip (you); scans use OpenSky alone until then
+- [x] dongle and whip moved to lola (on the 3 m extension, in the window sill)
+- [ ] 1090-only bandpass filter fitted (ordered; see below)
+
+## Finding: 1026 MHz interference at lola (2026-11-24)
+
+After the move the receiver went from 2-7 aircraft a scan in the kitchen
+to 0-1. Tests on lola:
+
+- dump1090 for 40 s at the default 49.6 dB gain: noise -14.6 dBFS (healthy
+  is about -30 to -35), about 1 million preambles, **0 messages decoded**.
+- At 35 dB gain: noise -20.3, 0 decoded. At 20 dB: noise -32.6, still 0.
+- `rtl_power` sweep of 900-1300 MHz at 30 dB gain: a **carrier at about
+  1025-1027 MHz, +28 dB over the floor**. The ADS-B band was only +6.
+
+A signal 64 MHz from 1090 overloads the unfiltered NESDR. The 1025-1150 MHz
+band carries aviation DME, so a ground beacon in line of sight from
+upstairs would explain the window doing worse than the kitchen. A local
+emitter would look the same; it wasn't proven either way.
+
+Fix: FlightAware's 1090 MHz-only bandpass filter (passband 1080-1100 MHz,
+SMA male to female, passive), between the whip and the NESDR. Not the older
+980-1150 MHz version, which passes 1026. When it's fitted, rerun the sweep
+and a 30 s dump1090 decode test. If the interference is gone but
+reception is still thin, add a 1090 LNA next.
 
 ## Why
 
